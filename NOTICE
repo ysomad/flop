@@ -1,0 +1,18 @@
+flop
+Copyright (c) 2026 Aleksei Malykh
+
+This product includes software developed at The LUCI Authors
+(https://github.com/luci/luci-go), licensed under the Apache License,
+Version 2.0.
+
+The following files are copied from luci-go and modified. Each file keeps the
+Apache License header and describes its modifications in a comment beneath it.
+
+  aip160/filter_parser.go   from common/data/aip160/filter_parser.go
+  aip132/orderby_parser.go  from common/data/aip132/orderby_parser.go
+
+The filter compiler, the order merge and the LIKE pattern escaping follow the
+design of luci-go's common/data/aip160 package without copying its code.
+
+A copy of the Apache License, Version 2.0 is available at
+http://www.apache.org/licenses/LICENSE-2.0

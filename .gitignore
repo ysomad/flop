@@ -1,0 +1,5 @@
+.DS_Store
+coverage.out
+go.work
+go.work.sum
+.claude
