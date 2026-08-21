@@ -1,6 +1,6 @@
 module github.com/ysomad/flop
 
-go 1.22
+go 1.27
 
 require (
 	github.com/alecthomas/assert/v2 v2.11.0

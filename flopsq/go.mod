@@ -1,6 +1,6 @@
 module github.com/ysomad/flop/flopsq
 
-go 1.22
+go 1.27
 
 replace github.com/ysomad/flop => ../
 

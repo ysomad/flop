@@ -5,7 +5,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/ysomad/flop.svg)](https://pkg.go.dev/github.com/ysomad/flop)
 
 Declarative AIP-132 ordering, AIP-160 filtering, and cursor or page-number
-pagination for Go 1.22+
+pagination for Go 1.27+
 
 | Package | Contents |
 | --- | --- |
