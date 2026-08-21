@@ -1,35 +1,3 @@
-// Copyright 2022 The LUCI Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// This file provides a parser for AIP-132 order by clauses, with advanced
-// field path support along the lines of AIP-161 (for map fields).
-// Only maps with string keys, not integer keys, are supported, however.
-//
-// Both field paths and the "desc" keyword are case-sensitive.
-//
-// order_by_list = order_by_clause {[spaces] "," order_by_clause} [spaces]
-// order_by_clause = field_path order
-// field_path = [spaces] segment {"." segment}
-// order = [spaces "desc"]
-// segment = string | quoted_string;
-// integer = ["-"] digit {digit};
-// string = (letter | "_") {letter | "_" | digit}
-// quoted_string = "`" { utf8-no-backtick | "`" "`" } "`"
-// spaces = " " { " " }
-//
-// No validation is performed to test that the field paths are valid for
-// a particular protocol buffer message.
 package aip132
 
 import (

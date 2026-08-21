@@ -1,30 +1,3 @@
-// Copyright 2022 The LUCI Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-// This file was copied from go.chromium.org/luci/common/data/aip160 and
-// modified for flop:
-//
-//   - A '-' immediately followed by a digit begins a numeric literal instead of
-//     being lexed as a negation, so `total > -30` parses.
-//   - Every alternative of the lexer pattern is anchored. Only the first one
-//     was, so input the lexer cannot read — "a ! b", say — matched a later
-//     alternative further along the input and was silently mis-tokenized
-//     instead of reported.
-//   - NewLexer is unexported; it returns an unexported type.
-//   - Filter.String tolerates a nil receiver, so callers that read a nil filter
-//     as "no filtering" can render one without a guard of their own.
-
 package aip160
 
 // This file contains a lexer and parser for AIP-160 filter expressions.
