@@ -241,7 +241,12 @@ func TestSchema_ParseFilter(t *testing.T) {
 
 		{name: "undeclared field", args: args{text: "nope = 1"}, wantErr: assert.Error},
 		{name: "declared but not filterable", args: args{text: `secret = "x"`}, wantErr: assert.Error},
-		{name: "not sortable is still filterable", args: args{text: "active = true"}, want: "u.active = true", wantErr: assert.NoError},
+		{
+			name:    "not sortable is still filterable",
+			args:    args{text: "active = true"},
+			want:    "u.active = true",
+			wantErr: assert.NoError,
+		},
 		{name: "syntax error", args: args{text: "a = "}, wantErr: assert.Error},
 		{name: "has on an int", args: args{text: "age:30"}, wantErr: assert.Error},
 		{name: "ordering on a string", args: args{text: `display_name < "bob"`}, wantErr: assert.Error},

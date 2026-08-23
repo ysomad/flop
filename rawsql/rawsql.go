@@ -83,53 +83,84 @@ func (b *Builder) WhereExpr(e flop.Expr) (string, error) {
 	if e == nil {
 		return "", nil
 	}
+	var sql strings.Builder
+	if err := b.writeExpr(&sql, e); err != nil {
+		return "", err
+	}
+	return sql.String(), nil
+}
+
+func (b *Builder) writeExpr(sql *strings.Builder, e flop.Expr) error {
 	switch node := e.(type) {
 	case flop.And:
-		return b.join(node.Exprs, " AND ")
+		return b.writeJoin(sql, node.Exprs, " AND ")
 	case flop.Or:
-		return b.join(node.Exprs, " OR ")
+		return b.writeJoin(sql, node.Exprs, " OR ")
 	case flop.Not:
-		inner, err := b.WhereExpr(node.Expr)
-		if err != nil {
-			return "", err
+		sql.WriteString("(NOT ")
+		if err := b.writeExpr(sql, node.Expr); err != nil {
+			return err
 		}
-		return fmt.Sprintf("(NOT %s)", inner), nil
+		sql.WriteByte(')')
+		return nil
 	case flop.Cmp:
-		return b.cmp(node)
+		return b.writeCmp(sql, node)
 	}
-	return "", fmt.Errorf("rawsql: unknown filter node %T", e)
+	return fmt.Errorf("rawsql: unknown filter node %T", e)
 }
 
-func (b *Builder) join(exprs []flop.Expr, sep string) (string, error) {
-	parts := make([]string, 0, len(exprs))
-	for _, expr := range exprs {
-		part, err := b.WhereExpr(expr)
-		if err != nil {
-			return "", err
+func (b *Builder) writeJoin(sql *strings.Builder, exprs []flop.Expr, sep string) error {
+	parenthesized := len(exprs) != 1
+	if parenthesized {
+		sql.WriteByte('(')
+	}
+	for i, expr := range exprs {
+		if i > 0 {
+			sql.WriteString(sep)
 		}
-		parts = append(parts, part)
+		if err := b.writeExpr(sql, expr); err != nil {
+			return err
+		}
 	}
-	if len(parts) == 1 {
-		return parts[0], nil
+	if parenthesized {
+		sql.WriteByte(')')
 	}
-	return fmt.Sprintf("(%s)", strings.Join(parts, sep)), nil
+	return nil
 }
 
-func (b *Builder) cmp(c flop.Cmp) (string, error) {
+func (b *Builder) writeCmp(sql *strings.Builder, c flop.Cmp) error {
 	column := c.Field.Column()
 	if c.Value == nil {
 		switch c.Op {
 		case flop.OpEq:
-			return fmt.Sprintf("(%s IS NULL)", column), nil
+			sql.WriteByte('(')
+			sql.WriteString(column)
+			sql.WriteString(" IS NULL)")
+			return nil
 		case flop.OpNe:
-			return fmt.Sprintf("(%s IS NOT NULL)", column), nil
+			sql.WriteByte('(')
+			sql.WriteString(column)
+			sql.WriteString(" IS NOT NULL)")
+			return nil
 		}
-		return "", fmt.Errorf("rawsql: %s cannot compare %s to null", c.Op, column)
+		return fmt.Errorf("rawsql: %s cannot compare %s to null", c.Op, column)
 	}
+
+	sql.WriteByte('(')
+	sql.WriteString(column)
+	sql.WriteByte(' ')
 	if c.Op == flop.OpLike {
-		return fmt.Sprintf("(%s LIKE %s %s)", column, b.bind(c.Field, c.Value), likeEscape), nil
+		sql.WriteString("LIKE ")
+		sql.WriteString(b.bind(c.Field, c.Value))
+		sql.WriteByte(' ')
+		sql.WriteString(likeEscape)
+	} else {
+		sql.WriteString(c.Op.String())
+		sql.WriteByte(' ')
+		sql.WriteString(b.bind(c.Field, c.Value))
 	}
-	return fmt.Sprintf("(%s %s %s)", column, c.Op.String(), b.bind(c.Field, c.Value)), nil
+	sql.WriteByte(')')
+	return nil
 }
 
 // Seek renders the row comparison that continues a page after pos, without the

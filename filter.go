@@ -92,6 +92,13 @@ var comparators = map[Type]map[string]Op{
 	TypeTime:   {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
 }
 
+var likeReplacer = strings.NewReplacer(
+	`\`, `\\`,
+	"%", `\%`,
+	"_", `\_`,
+	"*", "%",
+)
+
 // ParseFilter parses an AIP-160 filter and validates it against the schema.
 func (s *Schema) ParseFilter(text string) (*aip160.Filter, error) {
 	filter, err := aip160.ParseFilter(text)
@@ -236,7 +243,7 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 	// comparator asked for it. The has operator keeps searching anywhere in the
 	// value when the client wrote no wildcard of its own.
 	if text, ok := value.(string); ok && strings.Contains(text, "*") {
-		pattern := Cmp{Field: field, Op: OpLike, Value: quoteLike(text)}
+		pattern := Cmp{Field: field, Op: OpLike, Value: likeReplacer.Replace(text)}
 		if op == OpNe {
 			return Not{Expr: pattern}, nil
 		}
@@ -344,18 +351,7 @@ func coerce(field *Field, arg *aip160.Member) (any, error) {
 // is searched for anywhere in the column.
 func likePattern(text string) string {
 	if strings.Contains(text, "*") {
-		return quoteLike(text)
+		return likeReplacer.Replace(text)
 	}
-	return "%" + quoteLike(text) + "%"
-}
-
-// quoteLike renders a client's value as a LIKE pattern: the metacharacters of
-// the pattern language are escaped, so that a value such as test_name matches
-// literally rather than also matching test3name, and the * that AIP-160 gives a
-// client becomes the % that matches any run of characters.
-func quoteLike(value string) string {
-	value = strings.ReplaceAll(value, `\`, `\\`)
-	value = strings.ReplaceAll(value, "%", `\%`)
-	value = strings.ReplaceAll(value, "_", `\_`)
-	return strings.ReplaceAll(value, "*", "%")
+	return "%" + likeReplacer.Replace(text) + "%"
 }
