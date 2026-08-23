@@ -1,0 +1,16 @@
+flop
+Copyright (c) 2026 Aleksei Malykh
+
+This product includes software developed by The LUCI Authors
+(https://chromium.googlesource.com/infra/luci/luci-go), licensed under the
+Apache License, Version 2.0.
+
+The following files are derived from LUCI and have been modified for flop:
+
+  aip132/orderby_parser.go  from common/data/aip132/orderby_parser.go
+  aip160/filter_parser.go   from common/data/aip160/filter_parser.go
+
+The LUCI copyright and Apache-2.0 license notices are retained in those files.
+
+flop, including the modified LUCI-derived files, is licensed under the Apache
+License, Version 2.0. A copy of the license is provided in LICENSE.
