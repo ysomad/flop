@@ -3,6 +3,14 @@ package flop
 // Offset returns the row offset of a one-based page number. A zero page number
 // selects the first page.
 func Offset(page, pageSize int32) (int64, error) {
+	page, err := validPage(page, pageSize)
+	if err != nil {
+		return 0, err
+	}
+	return int64(page-1) * int64(pageSize), nil
+}
+
+func validPage(page, pageSize int32) (int32, error) {
 	if page < 0 {
 		return 0, errorf(ErrInvalidPage, "must not be negative")
 	}
@@ -12,7 +20,7 @@ func Offset(page, pageSize int32) (int64, error) {
 	if page == 0 {
 		page = 1
 	}
-	return int64(page-1) * int64(pageSize), nil
+	return page, nil
 }
 
 // OffsetPage is a page of rows and where it sits in the collection.
@@ -26,14 +34,9 @@ type OffsetPage[T any] struct {
 // NewOffsetPage assembles the page a page-number query returned. A zero page
 // number is the first page, as it is for [Offset].
 func NewOffsetPage[T any](rows []T, page, pageSize int32, totalItems int64) (OffsetPage[T], error) {
-	if page < 0 {
-		return OffsetPage[T]{}, errorf(ErrInvalidPage, "must not be negative")
-	}
-	if pageSize <= 0 {
-		return OffsetPage[T]{}, errorf(ErrInvalidPageSize, "must be positive")
-	}
-	if page == 0 {
-		page = 1
+	page, err := validPage(page, pageSize)
+	if err != nil {
+		return OffsetPage[T]{}, err
 	}
 	return OffsetPage[T]{
 		Items:      rows,

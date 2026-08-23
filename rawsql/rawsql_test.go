@@ -16,13 +16,13 @@ import (
 type errorFunc = func(testing.TB, error, ...any)
 
 var schema = flop.NewSchema(
-	flop.NewField("id").Column("u.id").Int().Unique().Build(),
-	flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().Build(),
-	flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().Build(),
-	flop.NewField("active").Column("u.active").Bool().Filterable().Build(),
-	flop.NewField("rating").Column("u.rating").Float().Filterable().Sortable().Build(),
-	flop.NewField("age").Column("u.age").Int().Filterable().Build(),
-	flop.NewField("metadata", "tags").Column("u.tags").String().Filterable().Build(),
+	flop.NewField("id").Column("u.id").Int().Unique(),
+	flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
+	flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+	flop.NewField("active").Column("u.active").Bool().Filterable(),
+	flop.NewField("rating").Column("u.rating").Float().Filterable().Sortable(),
+	flop.NewField("age").Column("u.age").Int().Filterable(),
+	flop.NewField("metadata", "tags").Column("u.tags").String().Filterable(),
 ).MustBuild()
 
 func TestWhere(t *testing.T) {

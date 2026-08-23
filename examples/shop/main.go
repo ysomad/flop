@@ -83,23 +83,22 @@ const (
 // from one table whose columns are named exactly as clients name the fields. A
 // joined query would qualify them, and only the column changes:
 //
-//	flop.NewField("user_id").Column("u.id").String().Filterable().Sortable().Build(),
+//	flop.NewField("user_id").Column("u.id").String().Filterable().Sortable(),
 func mustPaymentSchema() *flop.Schema {
 	return flop.NewSchema(
 		flop.NewField("id").String().Filterable().Unique().
-			Value(func(p payment) any { return p.ID }).Build(),
-		flop.NewField("amount").Int().Filterable().Sortable().Build(),
-		flop.NewField("created_at").Time().Filterable().Build(),
+			Value(func(p payment) any { return p.ID }),
+		flop.NewField("amount").Int().Filterable().Sortable(),
+		flop.NewField("created_at").Time().Filterable(),
 		flop.NewField(
 			"captured_at",
 		).
 			Value(func(p payment) any { return p.CapturedAt }).
 			Time().
 			Filterable().
-			Sortable().
-			Build(),
-		flop.NewField("provider").String().Filterable().Sortable().Implicit().Build(),
-		flop.NewField("user_id").String().Filterable().Sortable().Build(),
+			Sortable(),
+		flop.NewField("provider").String().Filterable().Sortable().Implicit(),
+		flop.NewField("user_id").String().Filterable().Sortable(),
 	).MustBuild()
 }
 

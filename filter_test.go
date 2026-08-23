@@ -279,17 +279,17 @@ func TestSchema_ParseFilter(t *testing.T) {
 func filterSchema(t *testing.T) *Schema {
 	t.Helper()
 	s, err := NewSchema(
-		NewField("id").Column("u.id").Int().Unique().Build(),
-		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().Build(),
-		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().Build(),
-		NewField("active").Column("u.active").Bool().Filterable().Build(),
-		NewField("rating").Column("u.rating").Float().Filterable().Build(),
-		NewField("age").Column("u.age").Int().Filterable().Build(),
-		NewField("age2").Column("u.age2").Int().Filterable().Build(),
-		NewField("age3").Column("u.age3").Int().Filterable().Build(),
-		NewField("age4").Column("u.age4").Int().Filterable().Build(),
-		NewField("secret").Column("u.secret").String().Build(),
-		NewField("metadata", "tags").Column("m.tags").String().Filterable().Build(),
+		NewField("id").Column("u.id").Int().Unique(),
+		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
+		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+		NewField("active").Column("u.active").Bool().Filterable(),
+		NewField("rating").Column("u.rating").Float().Filterable(),
+		NewField("age").Column("u.age").Int().Filterable(),
+		NewField("age2").Column("u.age2").Int().Filterable(),
+		NewField("age3").Column("u.age3").Int().Filterable(),
+		NewField("age4").Column("u.age4").Int().Filterable(),
+		NewField("secret").Column("u.secret").String(),
+		NewField("metadata", "tags").Column("m.tags").String().Filterable(),
 	).Build()
 	assert.NoError(t, err)
 	return s
@@ -310,9 +310,9 @@ func TestSchema_Compile_implicitFields(t *testing.T) {
 		{
 			name: "every implicit field is searched",
 			schema: NewSchema(
-				NewField("name").Column("u.name").String().Implicit().Build(),
-				NewField("email").Column("u.email").String().Implicit().Build(),
-				NewField("age").Column("u.age").Int().Filterable().Build(),
+				NewField("name").Column("u.name").String().Implicit(),
+				NewField("email").Column("u.email").String().Implicit(),
+				NewField("age").Column("u.age").Int().Filterable(),
 			).MustBuild(),
 			args:    args{text: "bob"},
 			want:    `(u.name LIKE "%bob%" OR u.email LIKE "%bob%")`,
@@ -321,7 +321,7 @@ func TestSchema_Compile_implicitFields(t *testing.T) {
 		{
 			name: "no implicit field",
 			schema: NewSchema(
-				NewField("name").Column("u.name").String().Filterable().Build(),
+				NewField("name").Column("u.name").String().Filterable(),
 			).MustBuild(),
 			args:    args{text: "bob"},
 			wantErr: assert.Error,
@@ -385,13 +385,13 @@ func FuzzCompile(f *testing.F) {
 	}
 
 	schema := NewSchema(
-		NewField("id").Column("u.id").Int().Unique().Build(),
-		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().Build(),
-		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().Build(),
-		NewField("active").Column("u.active").Bool().Filterable().Build(),
-		NewField("rating").Column("u.rating").Float().Filterable().Build(),
-		NewField("age").Column("u.age").Int().Filterable().Build(),
-		NewField("metadata", "tags").Column("m.tags").String().Filterable().Build(),
+		NewField("id").Column("u.id").Int().Unique(),
+		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
+		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+		NewField("active").Column("u.active").Bool().Filterable(),
+		NewField("rating").Column("u.rating").Float().Filterable(),
+		NewField("age").Column("u.age").Int().Filterable(),
+		NewField("metadata", "tags").Column("m.tags").String().Filterable(),
 	).MustBuild()
 
 	f.Fuzz(func(t *testing.T, input string) {

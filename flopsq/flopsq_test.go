@@ -26,15 +26,15 @@ type user struct {
 
 var schema = flop.NewSchema(
 	flop.NewField("id").Column("u.id").Int().Unique().
-		Value(func(u user) any { return u.ID }).Build(),
+		Value(func(u user) any { return u.ID }),
 	flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().
-		Value(func(u user) any { return u.Name }).Build(),
+		Value(func(u user) any { return u.Name }),
 	flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().
-		Value(func(u user) any { return u.CreatedAt }).Build(),
-	flop.NewField("active").Column("u.active").Bool().Filterable().Build(),
+		Value(func(u user) any { return u.CreatedAt }),
+	flop.NewField("active").Column("u.active").Bool().Filterable(),
 	flop.NewField("rating").Column("u.rating").Float().Filterable().Sortable().
-		Value(func(u user) any { return u.Rating }).Build(),
-	flop.NewField("age").Column("u.age").Int().Filterable().Build(),
+		Value(func(u user) any { return u.Rating }),
+	flop.NewField("age").Column("u.age").Int().Filterable(),
 ).MustBuild()
 
 var createdAt = time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)

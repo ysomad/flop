@@ -43,7 +43,7 @@ func (t Type) String() string {
 // it by, and never leaves the server. The two are free to differ:
 //
 //	flop.NewField("user_id").Column("u.id").Int().Filterable().Sortable().
-//		Value(func(u user) any { return u.ID }).Build()
+//		Value(func(u user) any { return u.ID })
 //
 // so a request filtering on user_id > 7 emits u.id > $1. A field that declares
 // no column selects the one its path names, which is what a collection drawn
@@ -178,15 +178,6 @@ func (b *FieldBuilder) Value[T any](fn func(T) any) *FieldBuilder {
 	return b
 }
 
-// Build returns the declared field, whose column defaults to its path.
-func (b *FieldBuilder) Build() *Field {
-	field := b.field
-	if field.column == "" {
-		field.column = field.path.String()
-	}
-	return &field
-}
-
 // Schema is the set of fields one collection exposes.
 type Schema struct {
 	fields    []*Field
@@ -197,24 +188,29 @@ type Schema struct {
 
 // SchemaBuilder builds a [Schema].
 type SchemaBuilder struct {
-	fields []*Field
+	fields []*FieldBuilder
 }
 
 // NewSchema starts a schema holding the given fields.
-func NewSchema(fields ...*Field) *SchemaBuilder {
+func NewSchema(fields ...*FieldBuilder) *SchemaBuilder {
 	return &SchemaBuilder{fields: fields}
 }
 
 // Build validates the declared fields and returns the schema.
 func (b *SchemaBuilder) Build() (*Schema, error) {
 	s := &Schema{
-		fields: b.fields,
+		fields: make([]*Field, 0, len(b.fields)),
 		byPath: make(map[string]*Field, len(b.fields)),
 	}
-	for _, f := range b.fields {
-		if f == nil {
+	for _, field := range b.fields {
+		if field == nil {
 			return nil, errorf(ErrDeclaration, "field is nil")
 		}
+		f := &field.field
+		if f.column == "" {
+			f.column = f.path.String()
+		}
+		s.fields = append(s.fields, f)
 		path := f.path.String()
 		if path == "" {
 			return nil, errorf(ErrDeclaration, "field has no path")

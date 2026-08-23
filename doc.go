@@ -7,9 +7,9 @@
 // page without a schema at all.
 //
 //	var users = flop.NewSchema(
-//		flop.NewField("id").Column("u.id").Int().Unique().Build(),
-//		flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().Build(),
-//		flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().Build(),
+//		flop.NewField("id").Column("u.id").Int().Unique(),
+//		flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
+//		flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
 //	).MustBuild()
 //
 // A field carries two names. Its path is the public contract, what a client

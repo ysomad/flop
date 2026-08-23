@@ -60,7 +60,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 		{
 			name: "no unique field to append",
 			schema: NewSchema(
-				NewField("created_at").Column("u.created_at").Time().Sortable().Build(),
+				NewField("created_at").Column("u.created_at").Time().Sortable(),
 			).MustBuild(),
 			args:    args{text: "created_at"},
 			want:    "created_at",
@@ -69,7 +69,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 		{
 			name: "empty clause without a unique field",
 			schema: NewSchema(
-				NewField("created_at").Column("u.created_at").Time().Sortable().Build(),
+				NewField("created_at").Column("u.created_at").Time().Sortable(),
 			).MustBuild(),
 			args:    args{text: ""},
 			want:    "",
@@ -77,7 +77,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 		},
 		{
 			name:    "multi segment path",
-			schema:  NewSchema(NewField("metadata", "tags").Column("m.tags").String().Sortable().Build()).MustBuild(),
+			schema:  NewSchema(NewField("metadata", "tags").Column("m.tags").String().Sortable()).MustBuild(),
 			args:    args{text: "metadata.tags desc"},
 			want:    "metadata.tags desc",
 			wantErr: assert.NoError,
@@ -213,7 +213,7 @@ func TestSchema_TotalOrder(t *testing.T) {
 		},
 		{
 			name:   "no unique field declared",
-			schema: NewSchema(NewField("a").Column("a").Int().Sortable().Build()).MustBuild(),
+			schema: NewSchema(NewField("a").Column("a").Int().Sortable()).MustBuild(),
 			args:   args{order: []aip132.OrderBy{a}},
 			want:   "a",
 		},

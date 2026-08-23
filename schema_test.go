@@ -11,7 +11,7 @@ import (
 func TestSchemaBuilder_Build(t *testing.T) {
 	t.Parallel()
 	type args struct {
-		fields []*Field
+		fields []*FieldBuilder
 	}
 	tests := []struct {
 		name       string
@@ -22,12 +22,12 @@ func TestSchemaBuilder_Build(t *testing.T) {
 	}{
 		{
 			name: "every capability",
-			args: args{fields: []*Field{
-				NewField("id").Column("u.id").Int().Unique().Build(),
-				NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().Build(),
-				NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().Build(),
-				NewField("active").Column("u.active").Bool().Filterable().Build(),
-				NewField("rating").Column("u.rating").Float().Filterable().Build(),
+			args: args{fields: []*FieldBuilder{
+				NewField("id").Column("u.id").Int().Unique(),
+				NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
+				NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+				NewField("active").Column("u.active").Bool().Filterable(),
+				NewField("rating").Column("u.rating").Float().Filterable(),
 			}},
 			wantUnique: "id",
 			wantErr:    assert.NoError,
@@ -35,14 +35,14 @@ func TestSchemaBuilder_Build(t *testing.T) {
 		{name: "no fields", args: args{}, wantErr: assert.NoError},
 		{
 			name:    "multi segment path",
-			args:    args{fields: []*Field{NewField("metadata", "tags").Column("m.tags").String().Filterable().Build()}},
+			args:    args{fields: []*FieldBuilder{NewField("metadata", "tags").Column("m.tags").String().Filterable()}},
 			wantErr: assert.NoError,
 		},
 		{
 			name: "value on a sortable field",
-			args: args{fields: []*Field{
+			args: args{fields: []*FieldBuilder{
 				NewField("id").Column("u.id").String().Unique().
-					Value(func(row string) any { return row }).Build(),
+					Value(func(row string) any { return row }),
 			}},
 			wantUnique: "id",
 			wantErr:    assert.NoError,
@@ -51,53 +51,53 @@ func TestSchemaBuilder_Build(t *testing.T) {
 			// Only an ordering field is ever read off a row, so a value
 			// anywhere else is a mistake rather than something unused.
 			name: "value on a field that is not sortable",
-			args: args{fields: []*Field{
+			args: args{fields: []*FieldBuilder{
 				NewField("active").Column("u.active").Bool().Filterable().
-					Value(func(row string) any { return row }).Build(),
+					Value(func(row string) any { return row }),
 			}},
 			wantErr: assert.Error,
 		},
-		{name: "nil field", args: args{fields: []*Field{nil}}, wantErr: assert.Error},
+		{name: "nil field", args: args{fields: []*FieldBuilder{nil}}, wantErr: assert.Error},
 		{
 			name:    "no path",
-			args:    args{fields: []*Field{NewField().Column("u.id").Int().Build()}},
+			args:    args{fields: []*FieldBuilder{NewField().Column("u.id").Int()}},
 			wantErr: assert.Error,
 		},
 		{
 			name:       "no column falls back to the path",
-			args:       args{fields: []*Field{NewField("id").Int().Build()}},
+			args:       args{fields: []*FieldBuilder{NewField("id").Int()}},
 			wantColumn: "id",
 			wantErr:    assert.NoError,
 		},
 		{
 			name:       "column overrides the path",
-			args:       args{fields: []*Field{NewField("id").Column("u.id").Int().Build()}},
+			args:       args{fields: []*FieldBuilder{NewField("id").Column("u.id").Int()}},
 			wantColumn: "u.id",
 			wantErr:    assert.NoError,
 		},
 		{
 			name:    "no type",
-			args:    args{fields: []*Field{NewField("id").Column("u.id").Build()}},
+			args:    args{fields: []*FieldBuilder{NewField("id").Column("u.id")}},
 			wantErr: assert.Error,
 		},
 		{
 			name:    "implicit on a non string field",
-			args:    args{fields: []*Field{NewField("age").Column("u.age").Int().Implicit().Build()}},
+			args:    args{fields: []*FieldBuilder{NewField("age").Column("u.age").Int().Implicit()}},
 			wantErr: assert.Error,
 		},
 		{
 			name: "duplicate path",
-			args: args{fields: []*Field{
-				NewField("id").Column("u.id").Int().Build(),
-				NewField("id").Column("u.other").Int().Build(),
+			args: args{fields: []*FieldBuilder{
+				NewField("id").Column("u.id").Int(),
+				NewField("id").Column("u.other").Int(),
 			}},
 			wantErr: assert.Error,
 		},
 		{
 			name: "two unique fields",
-			args: args{fields: []*Field{
-				NewField("id").Column("u.id").Int().Unique().Build(),
-				NewField("uuid").Column("u.uuid").String().Unique().Build(),
+			args: args{fields: []*FieldBuilder{
+				NewField("id").Column("u.id").Int().Unique(),
+				NewField("uuid").Column("u.uuid").String().Unique(),
 			}},
 			wantErr: assert.Error,
 		},
@@ -127,9 +127,9 @@ func TestSchemaBuilder_Build(t *testing.T) {
 func TestSchemaBuilder_MustBuild(t *testing.T) {
 	t.Parallel()
 	assert.Panics(t, func() {
-		NewSchema(NewField("id").Build()).MustBuild()
+		NewSchema(NewField("id")).MustBuild()
 	})
-	s := NewSchema(NewField("id").Column("u.id").Int().Build()).MustBuild()
+	s := NewSchema(NewField("id").Column("u.id").Int()).MustBuild()
 	assert.Equal(t, 1, len(s.Fields()))
 }
 
@@ -138,13 +138,13 @@ func TestSchemaBuilder_MustBuild(t *testing.T) {
 func testSchema(t *testing.T) *Schema {
 	t.Helper()
 	s, err := NewSchema(
-		NewField("id").Column("u.id").Int().Unique().Build(),
-		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().Build(),
-		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().Build(),
-		NewField("active").Column("u.active").Bool().Filterable().Build(),
-		NewField("rating").Column("u.rating").Float().Filterable().Build(),
-		NewField("secret").Column("u.secret").String().Build(),
-		NewField("metadata", "tags").Column("m.tags").String().Filterable().Build(),
+		NewField("id").Column("u.id").Int().Unique(),
+		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
+		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+		NewField("active").Column("u.active").Bool().Filterable(),
+		NewField("rating").Column("u.rating").Float().Filterable(),
+		NewField("secret").Column("u.secret").String(),
+		NewField("metadata", "tags").Column("m.tags").String().Filterable(),
 	).Build()
 	assert.NoError(t, err)
 	return s
@@ -245,12 +245,12 @@ func TestField_accessors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
-		field *Field
+		field *FieldBuilder
 		want  Field
 	}{
 		{
 			name:  "every capability",
-			field: NewField("display_name").Column("u.name").String().Implicit().Unique().Build(),
+			field: NewField("display_name").Column("u.name").String().Implicit().Unique(),
 			want: Field{
 				column: "u.name", typ: TypeString,
 				filterable: true, sortable: true, implicit: true, unique: true,
@@ -258,7 +258,7 @@ func TestField_accessors(t *testing.T) {
 		},
 		{
 			name:  "nothing declared",
-			field: NewField("secret").Column("u.secret").Time().Build(),
+			field: NewField("secret").Column("u.secret").Time(),
 			want:  Field{column: "u.secret", typ: TypeTime},
 		},
 	}
@@ -266,12 +266,13 @@ func TestField_accessors(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, test.want.column, test.field.Column())
-			assert.Equal(t, test.want.typ, test.field.Type())
-			assert.Equal(t, test.want.filterable, test.field.Filterable())
-			assert.Equal(t, test.want.sortable, test.field.Sortable())
-			assert.Equal(t, test.want.implicit, test.field.Implicit())
-			assert.Equal(t, test.want.unique, test.field.Unique())
+			field := &test.field.field
+			assert.Equal(t, test.want.column, field.Column())
+			assert.Equal(t, test.want.typ, field.Type())
+			assert.Equal(t, test.want.filterable, field.Filterable())
+			assert.Equal(t, test.want.sortable, field.Sortable())
+			assert.Equal(t, test.want.implicit, field.Implicit())
+			assert.Equal(t, test.want.unique, field.Unique())
 		})
 	}
 }
