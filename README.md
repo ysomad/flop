@@ -24,12 +24,9 @@ filter without sorting, sort without paging, or page without filtering.
 
 ```go
 var payments = flop.NewSchema(
-	flop.NewField("id").String().Unique().
-		Value(func(p payment) any { return p.ID }),
+	flop.NewField("id").String().Unique().Value(func(p payment) any { return p.ID }),
 	flop.NewField("amount").Int().Filterable().Sortable().
-		Value(func(p payment) any { return p.Amount }),
 	flop.NewField("captured_at").Time().Filterable().Sortable().
-		Value(func(p payment) any { return p.CapturedAt }),
 	flop.NewField("provider").String().Filterable().Implicit(),
 	flop.NewField("tenant_id").Column("t.id").String().Filterable(),
 ).MustBuild()

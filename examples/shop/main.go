@@ -64,8 +64,8 @@ type offsetResponse struct {
 }
 
 var (
-	psql     = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
-	payments = mustPaymentSchema()
+	psql          = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+	paymentSchema = mustPaymentSchema()
 )
 
 // defaultOrder sorts newest first. A client order takes precedence over it,
@@ -90,9 +90,7 @@ func mustPaymentSchema() *flop.Schema {
 			Value(func(p payment) any { return p.ID }),
 		flop.NewField("amount").Int().Filterable().Sortable(),
 		flop.NewField("created_at").Time().Filterable(),
-		flop.NewField(
-			"captured_at",
-		).
+		flop.NewField("captured_at").
 			Value(func(p payment) any { return p.CapturedAt }).
 			Time().
 			Filterable().
@@ -186,7 +184,7 @@ func handleCursorPayments(w http.ResponseWriter, r *http.Request) {
 
 	size := pageSize(req.PageSize)
 
-	after, err := payments.DecodeCursor(req.Cursor, order, f)
+	after, err := paymentSchema.DecodeCursor(req.Cursor, order, f)
 	if err != nil {
 		writeListError(w, err)
 		return
@@ -200,7 +198,7 @@ func handleCursorPayments(w http.ResponseWriter, r *http.Request) {
 
 	// The query asked for one row more than the page holds, and that surplus
 	// row is what says another page follows.
-	page, err := payments.CursorPage(rows, size, order, f)
+	page, err := paymentSchema.CursorPage(rows, size, order, f)
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -263,7 +261,7 @@ func listCursorPayments(
 	after flop.CursorPosition,
 	size, skip int32,
 ) ([]payment, error) {
-	b, err := flopsq.CursorQuery(baseQuery(), payments, order, f, after, size, skip)
+	b, err := flopsq.CursorQuery(baseQuery(), paymentSchema, order, f, after, size, skip)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +287,7 @@ func listOffsetPayments(
 	f *aip160.Filter,
 	page, size int32,
 ) ([]payment, int64, error) {
-	b, err := flopsq.OffsetQuery(baseQuery(), payments, order, f, page, size)
+	b, err := flopsq.OffsetQuery(baseQuery(), paymentSchema, order, f, page, size)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -315,7 +313,7 @@ func listOffsetPayments(
 	// on which payments the page is drawn from.
 	count, err := flopsq.Query(
 		psql.Select("count(*)").From("payments"),
-		payments, nil, f,
+		paymentSchema, nil, f,
 	)
 	if err != nil {
 		return nil, 0, err
@@ -353,7 +351,7 @@ func scanPayments(rows pgx.Rows) ([]payment, error) {
 // parseListRequest validates the order and filter a client sent against the
 // schema, so an endpoint rejects a bad one before it reaches the database.
 func parseListRequest(req listRequest) ([]aip132.OrderBy, *aip160.Filter, error) {
-	f, err := payments.ParseFilter(req.Filter)
+	f, err := paymentSchema.ParseFilter(req.Filter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -365,9 +363,9 @@ func parseListRequest(req listRequest) ([]aip132.OrderBy, *aip160.Filter, error)
 
 	// The default fills in the fields the client did not name, and the
 	// tie-breaker is appended afterwards so that it sorts last.
-	order := payments.TotalOrder(flop.MergeOrder(defaultOrder, requested))
+	order := paymentSchema.TotalOrder(flop.MergeOrder(defaultOrder, requested))
 
-	if err := payments.ValidateOrder(order); err != nil {
+	if err := paymentSchema.ValidateOrder(order); err != nil {
 		return nil, nil, err
 	}
 
