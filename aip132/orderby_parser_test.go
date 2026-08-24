@@ -3,11 +3,9 @@ package aip132_test
 import (
 	"testing"
 
-	"github.com/alecthomas/assert/v2"
 	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/internal/assert"
 )
-
-type errorFunc = func(testing.TB, error, ...any)
 
 func TestParseOrderBy(t *testing.T) {
 	t.Parallel()
@@ -15,7 +13,7 @@ func TestParseOrderBy(t *testing.T) {
 		name    string
 		input   string
 		want    []aip132.OrderBy
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", input: "", want: nil, wantErr: assert.NoError},
 		{name: "spaces only", input: "   ", want: nil, wantErr: assert.NoError},

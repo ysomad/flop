@@ -3,12 +3,8 @@ package flop
 import (
 	"testing"
 
-	"github.com/alecthomas/assert/v2"
+	"github.com/ysomad/flop/internal/assert"
 )
-
-// errorFunc lets a table row name the assertion its error must satisfy,
-// assert.NoError or assert.Error.
-type errorFunc = func(testing.TB, error, ...any)
 
 func Test_errorf(t *testing.T) {
 	t.Parallel()

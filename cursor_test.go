@@ -7,10 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alecthomas/assert/v2"
-
 	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/aip160"
+	"github.com/ysomad/flop/internal/assert"
 )
 
 // cursorRow is the row the cursor tests address.
@@ -90,7 +89,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 		name    string
 		args    args
 		want    Expr
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "first page",
@@ -255,7 +254,7 @@ func TestSchema_DecodeCursor(t *testing.T) {
 		name    string
 		args    args
 		want    CursorPosition
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "first page has no token",
@@ -425,7 +424,7 @@ func TestSchema_EncodeCursor(t *testing.T) {
 		name    string
 		args    args
 		want    CursorPosition
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name: "row",
@@ -525,7 +524,7 @@ func TestSchema_CursorPage(t *testing.T) {
 		name    string
 		args    args
 		want    page
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "last page mints no token",
