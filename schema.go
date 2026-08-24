@@ -9,7 +9,7 @@ import (
 
 // Type is the type a field's values carry. It decides which comparators a
 // field accepts and what Go type its arguments coerce to.
-type Type int
+type Type uint8
 
 const (
 	TypeString Type = iota + 1
