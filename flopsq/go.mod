@@ -7,7 +7,7 @@ replace github.com/ysomad/flop => ../
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/alecthomas/assert/v2 v2.11.0
-	github.com/ysomad/flop v0.0.0-00010101000000-000000000000
+	github.com/ysomad/flop v0.0.2
 )
 
 require (
