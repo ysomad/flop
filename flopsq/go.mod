@@ -6,7 +6,7 @@ replace github.com/ysomad/flop => ../
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/ysomad/flop v0.0.2
+	github.com/ysomad/flop v0.0.3
 )
 
 require (
