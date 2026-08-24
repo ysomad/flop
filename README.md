@@ -40,8 +40,17 @@ A field has a public path clients write, and a backend `Ref` that defaults to it
 
 ## Filtering
 
+[AIP-160](https://google.aip.dev/160),
+[grammar](https://google.aip.dev/assets/misc/ebnf-filtering.txt)
+
 ```go
 filter, err := payments.ParseFilter(r.FormValue("filter"))
+```
+
+```
+filter: amount >= 1000 AND provider = "stripe"
+sql:    ((amount >= @amount_1) AND (provider = @provider_2))
+args:   amount_1=1000 provider_2=stripe
 ```
 
 | type | operators |
@@ -50,17 +59,29 @@ filter, err := payments.ParseFilter(r.FormValue("filter"))
 | int, float, time, duration | `=` `!=` `<` `<=` `>` `>=` |
 | bool | `=` `!=` |
 
-`time` takes RFC 3339, `duration` takes Go syntax (`250ms`, `2h30m`). A `*` in a
-string argument makes it a `LIKE` pattern, `null` becomes `IS NULL`.
+`time` takes quoted RFC 3339, `duration` takes Go syntax (`250ms`, `2h30m`). A
+`*` in a string argument makes it a `LIKE` pattern, `null` becomes `IS NULL`.
 
 ## Ordering
+
+[AIP-132](https://google.aip.dev/132)
 
 ```go
 order, err := payments.ParseOrder(r.FormValue("order_by"))
 order = payments.TotalOrder(flop.MergeOrder(defaultOrder, order))
 ```
 
+```
+order_by: captured_at desc, amount
+sql:      captured_at DESC, amount, id
+```
+
+Ascending unless followed by `desc`; the unique field is appended to make the
+order total.
+
 ## Cursor pagination
+
+[AIP-158](https://google.aip.dev/158)
 
 ```go
 after, err := payments.DecodeCursor(req.Cursor, order, filter)
@@ -96,7 +117,8 @@ base := psql.Select("id", "amount").From("payments").
 q, err := flopsq.CursorQuery(base, payments, order, filter, after, size, skip)
 ```
 
-**rawsql** renders SQL text and named arguments; use one `Builder` per query:
+**rawsql** renders keyword-less SQL fragments and named arguments; use one
+`Builder` per query. An empty filter or a first page renders as `""`:
 
 ```go
 b := rawsql.NewBuilder()
@@ -104,8 +126,19 @@ where, err := b.Where(payments, filter)
 seek, err := b.Seek(payments, order, after)
 orderBy, err := rawsql.OrderBy(payments, order)
 
-rows, err := db.Query(ctx, "SELECT * FROM payments WHERE "+where+
-	" AND "+seek+" ORDER BY "+orderBy+" LIMIT $1", pgx.NamedArgs(b.Args()))
+sql := "SELECT id, amount FROM payments WHERE tenant_id = @tenant"
+if where != "" {
+	sql += " AND " + where
+}
+if seek != "" {
+	sql += " AND " + seek
+}
+sql += " ORDER BY " + orderBy
+
+args := b.Args()
+args["tenant"] = req.Tenant
+
+rows, err := db.Query(ctx, sql, pgx.NamedArgs(args))
 ```
 
 ## Credits
