@@ -17,28 +17,22 @@
 
 package aip132
 
+// This file contains a scanner and parser for AIP-132 order_by clauses.
+//
+// Implemented grammar, where WS is zero or more spaces and SP is one or more:
+// orderByList: WS clause {WS COMMA WS clause} WS EOF;
+// clause:      fieldPath [SP "desc"];
+// fieldPath:   segment {WS DOT WS segment};
+// segment:     LITERAL | QUOTED;
+// LITERAL:     [a-zA-Z_][a-zA-Z_0-9]*;
+// QUOTED:      backtick quoted text, where a doubled backtick is a literal one.
+//
+// AIP-132 states redundant space characters are insignificant, so spaces are
+// allowed around commas and dots and at either end of the clause. Only the
+// space separating a field from its "desc" suffix is required.
 import (
 	"fmt"
-	"regexp"
 	"strings"
-
-	participle "github.com/alecthomas/participle/v2"
-	"github.com/alecthomas/participle/v2/lexer"
-)
-
-const stringLiteralExpr = `[a-zA-Z_][a-zA-Z_0-9]*`
-
-var stringLiteralRE = regexp.MustCompile(`^` + stringLiteralExpr + `$`)
-
-var (
-	orderByLexer = lexer.MustSimple([]lexer.SimpleRule{
-		{Name: "Spaces", Pattern: `[ ]+`},
-		{Name: "String", Pattern: stringLiteralExpr},
-		{Name: "QuotedString", Pattern: "`(``|[^`])*`"},
-		{Name: "Operators", Pattern: "[.,]"},
-	})
-
-	orderByParser = participle.MustBuild[orderByList](participle.Lexer(orderByLexer))
 )
 
 // OrderBy represents a part of an AIP-132 order_by clause.
@@ -76,15 +70,15 @@ type FieldPath struct {
 // NewFieldPath initializes a new field path with the given segments.
 func NewFieldPath(segments ...string) FieldPath {
 	var s strings.Builder
-	for _, segment := range segments {
+	for _, seg := range segments {
 		if s.Len() > 0 {
 			s.WriteString(".")
 		}
-		if stringLiteralRE.MatchString(segment) {
-			s.WriteString(segment)
+		if isFieldLiteral(seg) {
+			s.WriteString(seg)
 		} else {
 			s.WriteString("`")
-			s.WriteString(strings.ReplaceAll(segment, "`", "``"))
+			s.WriteString(strings.ReplaceAll(seg, "`", "``"))
 			s.WriteString("`")
 		}
 	}
@@ -119,17 +113,10 @@ func ParseOrderBy(text string) ([]OrderBy, error) {
 		return nil, nil
 	}
 
-	expr, err := orderByParser.ParseString("", text)
+	s := &orderByScanner{input: text}
+	result, err := s.list()
 	if err != nil {
 		return nil, fmt.Errorf("syntax error: %w", err)
-	}
-
-	var result []OrderBy
-	for _, clause := range expr.SortOrder {
-		result = append(result, OrderBy{
-			FieldPath:  NewFieldPath(clause.FieldPath.Path()...),
-			Descending: clause.Order.Desc,
-		})
 	}
 
 	uniqueFieldPaths := make(map[string]struct{})
@@ -143,49 +130,167 @@ func ParseOrderBy(text string) ([]OrderBy, error) {
 	return result, nil
 }
 
-type orderByList struct {
-	SortOrder []*orderByClause `parser:"@@ ( Spaces? ',' @@ )* Spaces?"`
-}
-
-type orderByClause struct {
-	FieldPath *fieldPath `parser:"@@"`
-	Order     *order     `parser:"@@"`
-}
-
-type order struct {
-	Desc bool `parser:"@( Spaces 'desc' )?"`
-}
-
-type fieldPath struct {
-	Segments []*segment `parser:"Spaces? @@ ( '.' @@ )*"`
-}
-
-// Path returns the field path as a list of path segments.
-func (f *fieldPath) Path() []string {
-	result := make([]string, 0, len(f.Segments))
-	for _, segment := range f.Segments {
-		result = append(result, segment.Value())
+// isFieldLiteral reports whether a path segment can be written unquoted.
+func isFieldLiteral(s string) bool {
+	if s == "" || !isLiteralStart(s[0]) {
+		return false
 	}
-	return result
+	for i := 1; i < len(s); i++ {
+		if !isLiteralByte(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
-type segment struct {
-	StringValue  *string `parser:"@String"`
-	QuotedString *string `parser:"| @QuotedString"`
+func isLiteralStart(c byte) bool {
+	return c == '_' || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
-func (s *segment) Value() string {
-	if s.QuotedString != nil {
-		// Remove the outer backticks and replace all occurrences
-		// of double backticks with single backticks.
-		unquotedString := (*s.QuotedString)[1 : len(*s.QuotedString)-1]
-		return strings.ReplaceAll(unquotedString, "``", "`")
+func isLiteralByte(c byte) bool {
+	return isLiteralStart(c) || ('0' <= c && c <= '9')
+}
+
+// orderByScanner parses an order_by clause directly from its bytes. Every
+// character the grammar recognises is ASCII, so a byte at a time is enough:
+// a multi-byte rune can only appear inside a quoted segment, where it is
+// copied through, or outside one, where it is a syntax error either way.
+type orderByScanner struct {
+	input string
+	pos   int
+}
+
+func (s *orderByScanner) eof() bool {
+	return s.pos >= len(s.input)
+}
+
+// spaces consumes a run of spaces and reports whether it consumed any.
+func (s *orderByScanner) spaces() bool {
+	start := s.pos
+	for s.pos < len(s.input) && s.input[s.pos] == ' ' {
+		s.pos++
 	}
-	if s.StringValue != nil {
-		return *s.StringValue
+	return s.pos > start
+}
+
+func (s *orderByScanner) accept(c byte) bool {
+	if s.eof() || s.input[s.pos] != c {
+		return false
 	}
-	// Should never happen if parsing succeeds.
-	panic("invalid syntax")
+	s.pos++
+	return true
+}
+
+func (s *orderByScanner) literal() (string, bool) {
+	if s.eof() || !isLiteralStart(s.input[s.pos]) {
+		return "", false
+	}
+	start := s.pos
+	s.pos++
+	for s.pos < len(s.input) && isLiteralByte(s.input[s.pos]) {
+		s.pos++
+	}
+	return s.input[start:s.pos], true
+}
+
+func (s *orderByScanner) quoted() (string, error) {
+	s.pos++ // opening backtick
+	var b strings.Builder
+	for s.pos < len(s.input) {
+		c := s.input[s.pos]
+		if c != '`' {
+			b.WriteByte(c)
+			s.pos++
+			continue
+		}
+		// A doubled backtick is an escaped one, a lone backtick closes.
+		if s.pos+1 < len(s.input) && s.input[s.pos+1] == '`' {
+			b.WriteByte('`')
+			s.pos += 2
+			continue
+		}
+		s.pos++
+		return b.String(), nil
+	}
+	return "", fmt.Errorf("unterminated quoted segment at offset %d", s.pos)
+}
+
+func (s *orderByScanner) segment() (string, error) {
+	if !s.eof() && s.input[s.pos] == '`' {
+		return s.quoted()
+	}
+	if lit, ok := s.literal(); ok {
+		return lit, nil
+	}
+	return "", s.unexpected()
+}
+
+func (s *orderByScanner) fieldPath() ([]string, error) {
+	seg, err := s.segment()
+	if err != nil {
+		return nil, err
+	}
+	segments := []string{seg}
+	for {
+		save := s.pos
+		s.spaces()
+		if !s.accept('.') {
+			s.pos = save
+			return segments, nil
+		}
+		s.spaces()
+		seg, err := s.segment()
+		if err != nil {
+			return nil, err
+		}
+		segments = append(segments, seg)
+	}
+}
+
+func (s *orderByScanner) clause() (OrderBy, error) {
+	segments, err := s.fieldPath()
+	if err != nil {
+		return OrderBy{}, err
+	}
+	// fieldPath has already taken any trailing " . segment", so a space here
+	// followed by exactly "desc" can only be the suffix. Note this means
+	// "a. desc" is the single field a.desc, not field a in descending order.
+	save := s.pos
+	if s.spaces() {
+		if lit, ok := s.literal(); ok && lit == "desc" {
+			return OrderBy{FieldPath: NewFieldPath(segments...), Descending: true}, nil
+		}
+	}
+	s.pos = save
+	return OrderBy{FieldPath: NewFieldPath(segments...)}, nil
+}
+
+func (s *orderByScanner) list() ([]OrderBy, error) {
+	var result []OrderBy
+	for {
+		s.spaces()
+		clause, err := s.clause()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, clause)
+		s.spaces()
+		if !s.accept(',') {
+			break
+		}
+	}
+	if !s.eof() {
+		return nil, s.unexpected()
+	}
+	return result, nil
+}
+
+func (s *orderByScanner) unexpected() error {
+	if s.eof() {
+		return fmt.Errorf("unexpected end of input at offset %d", s.pos)
+	}
+	r := []rune(s.input[s.pos:])[0]
+	return fmt.Errorf("unexpected %q at offset %d", r, s.pos)
 }
 
 // OrderByString returns the AIP-132 representation of an order.
