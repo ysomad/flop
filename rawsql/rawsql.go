@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/filter"
-	"github.com/ysomad/flop/orderby"
+	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/aip160"
 )
 
 // likeEscape is the escape character every LIKE pattern flop compiles uses.
@@ -70,7 +70,7 @@ func paramName(field *flop.Field, n int) string {
 
 // Where renders a filter as a boolean expression, without the WHERE keyword.
 // An empty filter renders as "".
-func (b *Builder) Where(s *flop.Schema, f *filter.Filter) (string, error) {
+func (b *Builder) Where(s *flop.Schema, f *aip160.Filter) (string, error) {
 	expr, err := s.Compile(f)
 	if err != nil {
 		return "", err
@@ -167,7 +167,7 @@ func (b *Builder) writeCmp(sql *strings.Builder, c flop.Cmp) error {
 // WHERE keyword. A first page has no position and renders as "".
 func (b *Builder) Seek(
 	s *flop.Schema,
-	order []orderby.OrderBy,
+	order []aip132.OrderBy,
 	pos flop.CursorPosition,
 ) (string, error) {
 	expr, err := s.CompileSeek(order, pos)
@@ -179,7 +179,7 @@ func (b *Builder) Seek(
 
 // Where renders a filter as a boolean expression, without the WHERE keyword.
 // An empty filter renders as "" with no arguments.
-func Where(s *flop.Schema, f *filter.Filter) (string, map[string]any, error) {
+func Where(s *flop.Schema, f *aip160.Filter) (string, map[string]any, error) {
 	b := NewBuilder()
 	clause, err := b.Where(s, f)
 	if err != nil {
@@ -203,7 +203,7 @@ func WhereExpr(e flop.Expr) (string, map[string]any, error) {
 // WHERE keyword.
 func Seek(
 	s *flop.Schema,
-	order []orderby.OrderBy,
+	order []aip132.OrderBy,
 	pos flop.CursorPosition,
 ) (string, map[string]any, error) {
 	b := NewBuilder()
@@ -216,7 +216,7 @@ func Seek(
 
 // OrderBy renders an order as a column list, without the ORDER BY keyword.
 // An empty order renders as "".
-func OrderBy(s *flop.Schema, order []orderby.OrderBy) (string, error) {
+func OrderBy(s *flop.Schema, order []aip132.OrderBy) (string, error) {
 	if len(order) == 0 {
 		return "", nil
 	}

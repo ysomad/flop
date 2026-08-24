@@ -15,7 +15,7 @@
 // Modified in 2026 by the flop authors. See NOTICE for source and attribution
 // details.
 
-package orderby
+package aip132
 
 // This file contains a scanner and parser for AIP-132 order_by clauses.
 //
@@ -104,17 +104,37 @@ func (f FieldPath) GetSegments() []string {
 	return f.segments
 }
 
-// Parse parses an AIP-132 order_by list. It validates the syntax is correct
-// and each identifier appears at most once, but it does not validate the
-// identifiers themselves are valid.
-func Parse(text string) ([]OrderBy, error) {
+// ParseOrderBy parses an AIP-132 order_by list. The method validates the
+// syntax is correct and each identifier appears at most once, but
+// it does not validate the identifiers themselves are valid.
+//
+// It is a [Parser] used once, for a caller with a single clause to read.
+func ParseOrderBy(text string) ([]OrderBy, error) {
+	return NewParser().Parse(text)
+}
+
+// Parser parses AIP-132 order_by clauses. It carries the state of a single
+// parse, so one Parser may be reused across inputs but not across goroutines.
+type Parser struct {
+	scanner *scanner
+}
+
+// NewParser returns a parser ready to read its first clause. The zero Parser
+// is ready too.
+func NewParser() *Parser {
+	return &Parser{}
+}
+
+// Parse parses an AIP-132 order_by list, discarding whatever the previous call
+// left behind. It applies the rules [ParseOrderBy] documents.
+func (p *Parser) Parse(text string) ([]OrderBy, error) {
 	// Empty order_by list.
 	if strings.Trim(text, " ") == "" {
 		return nil, nil
 	}
 
-	s := scanner{input: text}
-	result, err := s.list()
+	p.scanner = &scanner{input: text}
+	result, err := p.scanner.list()
 	if err != nil {
 		return nil, fmt.Errorf("syntax error: %w", err)
 	}
@@ -291,25 +311,4 @@ func (s *scanner) unexpected() error {
 	}
 	r := []rune(s.input[s.pos:])[0]
 	return fmt.Errorf("unexpected %q at offset %d", r, s.pos)
-}
-
-// String returns the AIP-132 representation of an order.
-//
-// It is what the cursor binding is taken over, so an order that resolves the
-// same way fingerprints the same way.
-func String(order []OrderBy) string {
-	if len(order) == 0 {
-		return ""
-	}
-	var s strings.Builder
-	for i, field := range order {
-		if i > 0 {
-			s.WriteString(", ")
-		}
-		s.WriteString(field.FieldPath.String())
-		if field.Descending {
-			s.WriteString(" desc")
-		}
-	}
-	return s.String()
 }

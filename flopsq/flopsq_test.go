@@ -8,10 +8,10 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/filter"
+	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/flopsq"
 	"github.com/ysomad/flop/internal/assert"
-	"github.com/ysomad/flop/orderby"
 )
 
 // user is the row the query tests address.
@@ -169,18 +169,18 @@ func TestWhere(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			var f *filter.Filter
+			var filter *aip160.Filter
 			var err error
 			if test.args.unvalidated {
-				f, err = filter.Parse(test.args.filter)
+				filter, err = aip160.ParseFilter(test.args.filter)
 			} else {
-				f, err = schema.ParseFilter(test.args.filter)
+				filter, err = schema.ParseFilter(test.args.filter)
 			}
 			if err != nil {
 				test.wantErr(t, err)
 				return
 			}
-			where, gotErr := flopsq.Where(schema, f)
+			where, gotErr := flopsq.Where(schema, filter)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
 				return
@@ -199,14 +199,14 @@ func TestWhere(t *testing.T) {
 
 func TestOrderBy(t *testing.T) {
 	t.Parallel()
-	createdAtAsc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at")}
-	createdAtDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at"), Descending: true}
-	idAsc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("id")}
-	nopeAsc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("nope")}
-	activeAsc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("active")}
+	createdAtAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
+	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
+	idAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
+	nopeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("nope")}
+	activeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("active")}
 
 	type args struct {
-		order []orderby.OrderBy
+		order []aip132.OrderBy
 	}
 	tests := []struct {
 		name    string
@@ -217,26 +217,26 @@ func TestOrderBy(t *testing.T) {
 		{name: "empty", args: args{}, wantErr: assert.NoError},
 		{
 			name:    "ascending",
-			args:    args{order: []orderby.OrderBy{createdAtAsc}},
+			args:    args{order: []aip132.OrderBy{createdAtAsc}},
 			want:    []string{"u.created_at"},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "descending",
-			args:    args{order: []orderby.OrderBy{createdAtDesc}},
+			args:    args{order: []aip132.OrderBy{createdAtDesc}},
 			want:    []string{"u.created_at DESC"},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "several fields keep their order",
-			args:    args{order: []orderby.OrderBy{createdAtDesc, idAsc}},
+			args:    args{order: []aip132.OrderBy{createdAtDesc, idAsc}},
 			want:    []string{"u.created_at DESC", "u.id"},
 			wantErr: assert.NoError,
 		},
-		{name: "undeclared field", args: args{order: []orderby.OrderBy{nopeAsc}}, wantErr: assert.Error},
+		{name: "undeclared field", args: args{order: []aip132.OrderBy{nopeAsc}}, wantErr: assert.Error},
 		{
 			name:    "declared but not sortable",
-			args:    args{order: []orderby.OrderBy{activeAsc}},
+			args:    args{order: []aip132.OrderBy{activeAsc}},
 			wantErr: assert.Error,
 		},
 	}
@@ -256,16 +256,16 @@ func TestOrderBy(t *testing.T) {
 
 func TestSeek(t *testing.T) {
 	t.Parallel()
-	createdAtPath := orderby.NewFieldPath("created_at")
-	idPath := orderby.NewFieldPath("id")
+	createdAtPath := aip132.NewFieldPath("created_at")
+	idPath := aip132.NewFieldPath("id")
 
-	createdAtAsc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at")}
-	createdAtDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at"), Descending: true}
-	idAsc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("id")}
-	idDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("id"), Descending: true}
+	createdAtAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
+	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
+	idAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
+	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
 
 	type args struct {
-		order []orderby.OrderBy
+		order []aip132.OrderBy
 		pos   flop.CursorPosition
 	}
 	tests := []struct {
@@ -278,7 +278,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "single unique field",
 			args: args{
-				order: []orderby.OrderBy{idAsc},
+				order: []aip132.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			want:     "u.id > ?",
@@ -288,7 +288,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "descending flips the comparison",
 			args: args{
-				order: []orderby.OrderBy{idDesc},
+				order: []aip132.OrderBy{idDesc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			want:     "u.id < ?",
@@ -300,7 +300,7 @@ func TestSeek(t *testing.T) {
 			// than as a row value.
 			name: "mixed directions",
 			args: args{
-				order: []orderby.OrderBy{createdAtDesc, idAsc},
+				order: []aip132.OrderBy{createdAtDesc, idAsc},
 				pos: flop.CursorPosition{
 					{FieldPath: createdAtPath, Value: createdAt},
 					{FieldPath: idPath, Value: int64(7)},
@@ -312,7 +312,7 @@ func TestSeek(t *testing.T) {
 		},
 		{
 			name: "no position is a first page",
-			args: args{order: []orderby.OrderBy{idAsc}},
+			args: args{order: []aip132.OrderBy{idAsc}},
 			want: "", wantErr: assert.NoError,
 		},
 
@@ -320,7 +320,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "order without a unique field",
 			args: args{
-				order: []orderby.OrderBy{createdAtAsc},
+				order: []aip132.OrderBy{createdAtAsc},
 				pos:   flop.CursorPosition{{FieldPath: createdAtPath, Value: createdAt}},
 			},
 			wantErr: assert.Error,
@@ -328,7 +328,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "position does not cover the order",
 			args: args{
-				order: []orderby.OrderBy{createdAtDesc, idAsc},
+				order: []aip132.OrderBy{createdAtDesc, idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			wantErr: assert.Error,
@@ -336,7 +336,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "position names a field the order does not",
 			args: args{
-				order: []orderby.OrderBy{idAsc},
+				order: []aip132.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: createdAtPath, Value: createdAt}},
 			},
 			wantErr: assert.Error,
@@ -344,7 +344,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "null position value",
 			args: args{
-				order: []orderby.OrderBy{idAsc},
+				order: []aip132.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: nil}},
 			},
 			wantErr: assert.Error,
@@ -410,7 +410,7 @@ func TestQuery(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			f, err := schema.ParseFilter(test.args.filter)
+			filter, err := schema.ParseFilter(test.args.filter)
 			assert.NoError(t, err)
 			order, err := schema.ParseOrder(test.args.order)
 			assert.NoError(t, err)
@@ -420,7 +420,7 @@ func TestQuery(t *testing.T) {
 
 			b, err := flopsq.Query(
 				sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
-				schema, order, f,
+				schema, order, filter,
 			)
 			assert.NoError(t, err)
 			got, gotArgs, err := b.ToSql()
@@ -430,17 +430,17 @@ func TestQuery(t *testing.T) {
 		})
 	}
 
-	t.Run("invalid f", func(t *testing.T) {
+	t.Run("invalid filter", func(t *testing.T) {
 		t.Parallel()
-		f, err := filter.Parse("nope = 1")
+		filter, err := aip160.ParseFilter("nope = 1")
 		assert.NoError(t, err)
-		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, nil, f)
+		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, nil, filter)
 		assert.Error(t, err)
 	})
 
 	t.Run("invalid order", func(t *testing.T) {
 		t.Parallel()
-		order, err := orderby.Parse("nope")
+		order, err := aip132.ParseOrderBy("nope")
 		assert.NoError(t, err)
 		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, order, nil)
 		assert.Error(t, err)
@@ -449,18 +449,18 @@ func TestQuery(t *testing.T) {
 
 func TestOffsetQuery(t *testing.T) {
 	t.Parallel()
-	activeFilter, err := schema.ParseFilter("active = true")
+	filter, err := schema.ParseFilter("active = true")
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
-	invalidFilter, err := filter.Parse("nope = 1")
+	invalidFilter, err := aip160.ParseFilter("nope = 1")
 	assert.NoError(t, err)
-	invalidOrder, err := orderby.Parse("nope")
+	invalidOrder, err := aip132.ParseOrderBy("nope")
 	assert.NoError(t, err)
 
 	type args struct {
-		order    []orderby.OrderBy
-		filter   *filter.Filter
+		order    []aip132.OrderBy
+		filter   *aip160.Filter
 		page     int32
 		pageSize int32
 	}
@@ -473,7 +473,7 @@ func TestOffsetQuery(t *testing.T) {
 	}{
 		{
 			name: "page",
-			args: args{order: order, filter: activeFilter, page: 3, pageSize: 20},
+			args: args{order: order, filter: filter, page: 3, pageSize: 20},
 			want: "SELECT * FROM users u WHERE u.active = $1 " +
 				"ORDER BY u.created_at DESC, u.id LIMIT 20 OFFSET 40",
 			wantArgs: []any{true},
@@ -490,7 +490,7 @@ func TestOffsetQuery(t *testing.T) {
 			wantErr: assert.Error,
 		},
 		{
-			name:    "invalid activeFilter",
+			name:    "invalid filter",
 			args:    args{filter: invalidFilter, page: 1, pageSize: 20},
 			wantErr: assert.Error,
 		},
@@ -522,24 +522,24 @@ func TestOffsetQuery(t *testing.T) {
 
 func TestCursorQuery(t *testing.T) {
 	t.Parallel()
-	activeFilter, err := schema.ParseFilter("active = true")
+	filter, err := schema.ParseFilter("active = true")
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
-	token, err := schema.EncodeCursor(user{ID: 7, CreatedAt: createdAt}, order, activeFilter)
+	token, err := schema.EncodeCursor(user{ID: 7, CreatedAt: createdAt}, order, filter)
 	assert.NoError(t, err)
-	after, err := schema.DecodeCursor(token, order, activeFilter)
+	after, err := schema.DecodeCursor(token, order, filter)
 	assert.NoError(t, err)
-	invalidFilter, err := filter.Parse("nope = 1")
+	invalidFilter, err := aip160.ParseFilter("nope = 1")
 	assert.NoError(t, err)
-	invalidOrder, err := orderby.Parse("nope")
+	invalidOrder, err := aip132.ParseOrderBy("nope")
 	assert.NoError(t, err)
-	nonUniqueOrder, err := orderby.Parse("created_at")
+	nonUniqueOrder, err := aip132.ParseOrderBy("created_at")
 	assert.NoError(t, err)
 
 	type args struct {
-		order    []orderby.OrderBy
-		filter   *filter.Filter
+		order    []aip132.OrderBy
+		filter   *aip160.Filter
 		after    flop.CursorPosition
 		pageSize int32
 		skip     int32
@@ -553,7 +553,7 @@ func TestCursorQuery(t *testing.T) {
 	}{
 		{
 			name: "first page",
-			args: args{order: order, filter: activeFilter, pageSize: 2},
+			args: args{order: order, filter: filter, pageSize: 2},
 			want: "SELECT * FROM users u WHERE u.active = $1 " +
 				"ORDER BY u.created_at DESC, u.id LIMIT 3",
 			wantArgs: []any{true},
@@ -561,7 +561,7 @@ func TestCursorQuery(t *testing.T) {
 		},
 		{
 			name: "position and skip",
-			args: args{order: order, filter: activeFilter, after: after, pageSize: 2, skip: 5},
+			args: args{order: order, filter: filter, after: after, pageSize: 2, skip: 5},
 			want: "SELECT * FROM users u WHERE u.active = $1 AND " +
 				"(u.created_at < $2 OR (u.created_at = $3 AND u.id > $4)) " +
 				"ORDER BY u.created_at DESC, u.id LIMIT 3 OFFSET 5",
@@ -585,7 +585,7 @@ func TestCursorQuery(t *testing.T) {
 			wantErr: assert.Error,
 		},
 		{
-			name:    "invalid activeFilter",
+			name:    "invalid filter",
 			args:    args{order: order, filter: invalidFilter, pageSize: 2},
 			wantErr: assert.Error,
 		},

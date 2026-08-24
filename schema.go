@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ysomad/flop/orderby"
+	"github.com/ysomad/flop/aip132"
 )
 
 // fieldType is the type a field's values carry. It decides which comparators a
@@ -55,7 +55,7 @@ func (t fieldType) String() string {
 // filters clients already send stop resolving, and cursors they already hold
 // stop matching, because the binding is taken over the paths the order names.
 type Field struct {
-	path orderby.FieldPath
+	path aip132.FieldPath
 	ref  string
 	typ  fieldType
 
@@ -68,7 +68,7 @@ type Field struct {
 }
 
 // Path returns the field path clients name the field by.
-func (f *Field) Path() orderby.FieldPath { return f.path }
+func (f *Field) Path() aip132.FieldPath { return f.path }
 
 // Ref returns the backend reference generated queries use for the field.
 func (f *Field) Ref() string { return f.ref }
@@ -82,7 +82,7 @@ type FieldBuilder struct {
 // the AIP-161 traversal operator, so NewField("metadata", "tags") declares the
 // path metadata.tags.
 func NewField(segments ...string) *FieldBuilder {
-	return &FieldBuilder{field: Field{path: orderby.NewFieldPath(segments...)}}
+	return &FieldBuilder{field: Field{path: aip132.NewFieldPath(segments...)}}
 }
 
 // Ref sets the backend reference generated queries use. It defaults to the
@@ -247,7 +247,7 @@ func (s *Schema) Fields() []*Field { return s.fields }
 func (s *Schema) UniqueField() *Field { return s.uniqueKey }
 
 // FilterableField returns the filterable field at path.
-func (s *Schema) FilterableField(path orderby.FieldPath) (*Field, error) {
+func (s *Schema) FilterableField(path aip132.FieldPath) (*Field, error) {
 	if f, ok := s.byPath[path.String()]; ok && f.filterable {
 		return f, nil
 	}
@@ -259,7 +259,7 @@ func (s *Schema) FilterableField(path orderby.FieldPath) (*Field, error) {
 }
 
 // SortableField returns the sortable field at path.
-func (s *Schema) SortableField(path orderby.FieldPath) (*Field, error) {
+func (s *Schema) SortableField(path aip132.FieldPath) (*Field, error) {
 	if f, ok := s.byPath[path.String()]; ok && f.sortable {
 		return f, nil
 	}
@@ -272,7 +272,7 @@ func (s *Schema) SortableField(path orderby.FieldPath) (*Field, error) {
 
 // SortableFields resolves each term of an order to the field it names, keeping
 // the order's own indexing so a term's direction is read from it directly.
-func (s *Schema) SortableFields(order []orderby.OrderBy) ([]*Field, error) {
+func (s *Schema) SortableFields(order []aip132.OrderBy) ([]*Field, error) {
 	fields := make([]*Field, 0, len(order))
 	for _, term := range order {
 		field, err := s.SortableField(term.FieldPath)

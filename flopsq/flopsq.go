@@ -13,8 +13,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/filter"
-	"github.com/ysomad/flop/orderby"
+	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/aip160"
 )
 
 // likeEscape is the escape character every LIKE pattern flop compiles uses.
@@ -22,7 +22,7 @@ const likeEscape = ` ESCAPE '\'`
 
 // Where builds the condition for a filter. An empty filter returns a nil
 // Sqlizer, which squirrel's Where ignores.
-func Where(s *flop.Schema, f *filter.Filter) (sq.Sqlizer, error) {
+func Where(s *flop.Schema, f *aip160.Filter) (sq.Sqlizer, error) {
 	expr, err := s.Compile(f)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func (n not) ToSql() (string, []any, error) {
 }
 
 // OrderBy renders an order as the column list squirrel's OrderBy takes.
-func OrderBy(s *flop.Schema, order []orderby.OrderBy) ([]string, error) {
+func OrderBy(s *flop.Schema, order []aip132.OrderBy) ([]string, error) {
 	if len(order) == 0 {
 		return nil, nil
 	}
@@ -132,8 +132,8 @@ func OrderBy(s *flop.Schema, order []orderby.OrderBy) ([]string, error) {
 func Query(
 	b sq.SelectBuilder,
 	s *flop.Schema,
-	order []orderby.OrderBy,
-	f *filter.Filter,
+	order []aip132.OrderBy,
+	f *aip160.Filter,
 ) (sq.SelectBuilder, error) {
 	where, err := Where(s, f)
 	if err != nil {
@@ -157,8 +157,8 @@ func Query(
 func OffsetQuery(
 	b sq.SelectBuilder,
 	s *flop.Schema,
-	order []orderby.OrderBy,
-	f *filter.Filter,
+	order []aip132.OrderBy,
+	f *aip160.Filter,
 	page, pageSize int32,
 ) (sq.SelectBuilder, error) {
 	offset, err := flop.Offset(page, pageSize)
@@ -181,8 +181,8 @@ func OffsetQuery(
 func CursorQuery(
 	b sq.SelectBuilder,
 	s *flop.Schema,
-	order []orderby.OrderBy,
-	f *filter.Filter,
+	order []aip132.OrderBy,
+	f *aip160.Filter,
 	after flop.CursorPosition,
 	pageSize, skip int32,
 ) (sq.SelectBuilder, error) {
@@ -217,7 +217,7 @@ func CursorQuery(
 
 // Seek builds the row comparison that continues a page after pos. A first page
 // has no position and returns a nil Sqlizer.
-func Seek(s *flop.Schema, order []orderby.OrderBy, pos flop.CursorPosition) (sq.Sqlizer, error) {
+func Seek(s *flop.Schema, order []aip132.OrderBy, pos flop.CursorPosition) (sq.Sqlizer, error) {
 	expr, err := s.CompileSeek(order, pos)
 	if err != nil {
 		return nil, err

@@ -15,7 +15,7 @@
 // Modified in 2026 by the flop authors. See NOTICE for source and attribution
 // details.
 
-package filter
+package aip160
 
 // This file contains a lexer and parser for AIP-160 filter expressions.
 // The EBNF is at https://google.aip.dev/assets/misc/ebnf-filtering.txt
@@ -73,6 +73,10 @@ type token struct {
 type lexer struct {
 	input string
 	next  *token
+}
+
+func newLexer(input string) *lexer {
+	return &lexer{input: input}
 }
 
 func (l *lexer) Peek() (*token, error) {
@@ -524,17 +528,32 @@ func (v Value) Input() string {
 	return v.Value
 }
 
-// Parse parses an AIP-160 filter string into an AST.
-func Parse(text string) (*Filter, error) {
-	p := parser{lexer: lexer{input: text}}
+// ParseFilter parses an AIP-160 filter string into an AST. It is a [Parser]
+// used once, for a caller with a single filter to read.
+func ParseFilter(text string) (*Filter, error) {
+	return NewParser().Parse(text)
+}
+
+// Parser parses AIP-160 filter expressions. It carries the state of a single
+// parse, so one Parser may be reused across inputs but not across goroutines.
+type Parser struct {
+	lexer *lexer
+}
+
+// NewParser returns a parser ready to read its first filter. The zero Parser
+// is ready too.
+func NewParser() *Parser {
+	return &Parser{}
+}
+
+// Parse parses an AIP-160 filter string into an AST, discarding whatever the
+// previous call left behind.
+func (p *Parser) Parse(text string) (*Filter, error) {
+	p.lexer = newLexer(text)
 	return p.filter()
 }
 
-type parser struct {
-	lexer lexer
-}
-
-func (p *parser) expect(kind string) error {
+func (p *Parser) expect(kind string) error {
 	t, err := p.lexer.Peek()
 	if err != nil {
 		return err
@@ -548,7 +567,7 @@ func (p *parser) expect(kind string) error {
 
 // expectSpaceBefore fails if the next token is of kind but no whitespace
 // precedes it. A token of another kind is left for the caller to handle.
-func (p *parser) expectSpaceBefore(kind string) error {
+func (p *Parser) expectSpaceBefore(kind string) error {
 	t, err := p.lexer.Peek()
 	if err != nil {
 		return err
@@ -561,7 +580,7 @@ func (p *parser) expectSpaceBefore(kind string) error {
 
 // rejectSpaceBefore fails if the next token is of kind and whitespace precedes
 // it. A token of another kind is left for the caller to handle.
-func (p *parser) rejectSpaceBefore(kind string) error {
+func (p *Parser) rejectSpaceBefore(kind string) error {
 	t, err := p.lexer.Peek()
 	if err != nil {
 		return err
@@ -581,7 +600,7 @@ func startsFactor(kind string) bool {
 	return false
 }
 
-func (p *parser) accept(kind string) (*token, error) {
+func (p *Parser) accept(kind string) (*token, error) {
 	t, err := p.lexer.Peek()
 	if err != nil {
 		return nil, err
@@ -592,7 +611,7 @@ func (p *parser) accept(kind string) (*token, error) {
 	return p.lexer.Next()
 }
 
-func (p *parser) filter() (*Filter, error) {
+func (p *Parser) filter() (*Filter, error) {
 	t, err := p.accept(kindEnd)
 	if err != nil {
 		return nil, err
@@ -607,7 +626,7 @@ func (p *parser) filter() (*Filter, error) {
 	return &Filter{Expression: e}, p.expect(kindEnd)
 }
 
-func (p *parser) expression() (*Expression, error) {
+func (p *Parser) expression() (*Expression, error) {
 	s, err := p.sequence()
 	if err != nil {
 		return nil, err
@@ -640,7 +659,7 @@ func (p *parser) expression() (*Expression, error) {
 	return e, nil
 }
 
-func (p *parser) sequence() (*Sequence, error) {
+func (p *Parser) sequence() (*Sequence, error) {
 	s := &Sequence{}
 	for {
 		if len(s.Factors) > 0 {
@@ -667,7 +686,7 @@ func (p *parser) sequence() (*Sequence, error) {
 	return s, nil
 }
 
-func (p *parser) factor() (*Factor, error) {
+func (p *Parser) factor() (*Factor, error) {
 	t, err := p.term()
 	if err != nil {
 		return nil, err
@@ -700,7 +719,7 @@ func (p *parser) factor() (*Factor, error) {
 	return f, nil
 }
 
-func (p *parser) term() (*Term, error) {
+func (p *Parser) term() (*Term, error) {
 	n, err := p.accept(kindNegate)
 	if err != nil {
 		return nil, err
@@ -729,7 +748,7 @@ func (p *parser) term() (*Term, error) {
 	return &Term{Negated: n != nil, Simple: s}, nil
 }
 
-func (p *parser) simple() (*Simple, error) {
+func (p *Parser) simple() (*Simple, error) {
 	r, err := p.restriction()
 	if err != nil {
 		return nil, err
@@ -747,7 +766,7 @@ func (p *parser) simple() (*Simple, error) {
 	return nil, nil
 }
 
-func (p *parser) restriction() (*Restriction, error) {
+func (p *Parser) restriction() (*Restriction, error) {
 	comparable, err := p.comparable()
 	if err != nil {
 		return nil, err
@@ -772,7 +791,7 @@ func (p *parser) restriction() (*Restriction, error) {
 	return &Restriction{Comparable: comparable, Comparator: comparator.value, Arg: arg}, nil
 }
 
-func (p *parser) comparable() (*Comparable, error) {
+func (p *Parser) comparable() (*Comparable, error) {
 	m, err := p.member()
 	if err != nil {
 		return nil, err
@@ -783,7 +802,7 @@ func (p *parser) comparable() (*Comparable, error) {
 	return &Comparable{Member: m}, nil
 }
 
-func (p *parser) member() (*Member, error) {
+func (p *Parser) member() (*Member, error) {
 	v, err := p.value()
 	if err != nil {
 		return nil, err
@@ -827,7 +846,7 @@ func (p *parser) member() (*Member, error) {
 
 // value attempts to consume a Value from the input tokens.
 // If no value can be read, returns nil.
-func (p *parser) value() (*Value, error) {
+func (p *Parser) value() (*Value, error) {
 	v, err := p.accept(kindString)
 	if err != nil {
 		return nil, err
@@ -850,7 +869,7 @@ func (p *parser) value() (*Value, error) {
 	return &Value{Value: v.value}, nil
 }
 
-func (p *parser) composite() (*Expression, error) {
+func (p *Parser) composite() (*Expression, error) {
 	lparen, err := p.accept(kindLParen)
 	if err != nil {
 		return nil, err
@@ -868,7 +887,7 @@ func (p *parser) composite() (*Expression, error) {
 	return e, p.expect(kindRParen)
 }
 
-func (p *parser) arg() (*Arg, error) {
+func (p *Parser) arg() (*Arg, error) {
 	comparable, err := p.comparable()
 	if err != nil {
 		return nil, err
