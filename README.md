@@ -10,8 +10,8 @@ pagination for Go 1.27+
 | Package | Contents |
 | --- | --- |
 | `flop` | schema, filter compiler, ordering, cursors, page numbers |
-| [`flop/filter`](./filter) | AIP-160 filter parser and syntax tree |
-| [`flop/orderby`](./orderby) | AIP-132 order_by parser |
+| [`flop/aip160`](./aip160) | AIP-160 filter parser and syntax tree |
+| [`flop/aip132`](./aip132) | AIP-132 order_by parser |
 | [`flop/rawsql`](./rawsql) | SQL text and named arguments |
 | [`flop/flopsq`](./flopsq) | [squirrel](https://github.com/Masterminds/squirrel) query builders |
 
