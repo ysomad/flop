@@ -2,10 +2,7 @@ module github.com/ysomad/flop
 
 go 1.27
 
-require (
-	github.com/alecthomas/assert/v2 v2.11.0
-	github.com/alecthomas/participle/v2 v2.1.4
-)
+require github.com/alecthomas/assert/v2 v2.11.0
 
 require (
 	github.com/alecthomas/repr v0.4.0 // indirect

@@ -50,7 +50,61 @@ func TestParseOrderBy(t *testing.T) {
 			},
 			wantErr: assert.NoError,
 		},
+		{
+			name:  "spaces around dot are insignificant",
+			input: "user . name",
+			want: []aip132.OrderBy{
+				{FieldPath: aip132.NewFieldPath("user", "name")},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:  "spaces at every junction",
+			input: " a .b, c. d desc ",
+			want: []aip132.OrderBy{
+				{FieldPath: aip132.NewFieldPath("a", "b")},
+				{FieldPath: aip132.NewFieldPath("c", "d"), Descending: true},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:  "spaces around dot with quoted segment",
+			input: "metadata . `odd name` . value",
+			want: []aip132.OrderBy{
+				{FieldPath: aip132.NewFieldPath("metadata", "odd name", "value")},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			// A dot binds tighter than the desc suffix, so this is one field.
+			name:  "dot wins over desc suffix",
+			input: "create_time. desc",
+			want: []aip132.OrderBy{
+				{FieldPath: aip132.NewFieldPath("create_time", "desc")},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:  "empty quoted segment",
+			input: "``",
+			want: []aip132.OrderBy{
+				{FieldPath: aip132.NewFieldPath("")},
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name:  "field named desc in descending order",
+			input: "desc desc",
+			want: []aip132.OrderBy{
+				{FieldPath: aip132.NewFieldPath("desc"), Descending: true},
+			},
+			wantErr: assert.NoError,
+		},
 		{name: "duplicate field", input: "id, id desc", wantErr: assert.Error},
+		{name: "desc is not prefix matched", input: "id descending", wantErr: assert.Error},
+		{name: "dot after desc suffix", input: "a desc . b", wantErr: assert.Error},
+		{name: "unterminated quoted segment", input: "`abc", wantErr: assert.Error},
+		{name: "tab is not a space", input: "id\tdesc", wantErr: assert.Error},
 		{name: "ascending is not a keyword", input: "id asc", wantErr: assert.Error},
 		{name: "uppercase desc", input: "id DESC", wantErr: assert.Error},
 		{name: "trailing comma", input: "id,", wantErr: assert.Error},
