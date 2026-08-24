@@ -107,34 +107,14 @@ func (f FieldPath) GetSegments() []string {
 // ParseOrderBy parses an AIP-132 order_by list. The method validates the
 // syntax is correct and each identifier appears at most once, but
 // it does not validate the identifiers themselves are valid.
-//
-// It is a [Parser] used once, for a caller with a single clause to read.
 func ParseOrderBy(text string) ([]OrderBy, error) {
-	return NewParser().Parse(text)
-}
-
-// Parser parses AIP-132 order_by clauses. It carries the state of a single
-// parse, so one Parser may be reused across inputs but not across goroutines.
-type Parser struct {
-	scanner *scanner
-}
-
-// NewParser returns a parser ready to read its first clause. The zero Parser
-// is ready too.
-func NewParser() *Parser {
-	return &Parser{}
-}
-
-// Parse parses an AIP-132 order_by list, discarding whatever the previous call
-// left behind. It applies the rules [ParseOrderBy] documents.
-func (p *Parser) Parse(text string) ([]OrderBy, error) {
 	// Empty order_by list.
 	if strings.Trim(text, " ") == "" {
 		return nil, nil
 	}
 
-	p.scanner = &scanner{input: text}
-	result, err := p.scanner.list()
+	s := scanner{input: text}
+	result, err := s.list()
 	if err != nil {
 		return nil, fmt.Errorf("syntax error: %w", err)
 	}

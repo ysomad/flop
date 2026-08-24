@@ -156,7 +156,7 @@ func (s *Schema) compileExpression(e *aip160.Expression) (Expr, error) {
 	return And{Exprs: exprs}, nil
 }
 
-func (s *Schema) compileFactor(f *aip160.Factor) (Expr, error) {
+func (s *Schema) compileFactor(f aip160.Factor) (Expr, error) {
 	exprs := make([]Expr, 0, len(f.Terms))
 	for _, term := range f.Terms {
 		expr, err := s.compileTerm(term)
@@ -174,7 +174,7 @@ func (s *Schema) compileFactor(f *aip160.Factor) (Expr, error) {
 	return Or{Exprs: exprs}, nil
 }
 
-func (s *Schema) compileTerm(t *aip160.Term) (Expr, error) {
+func (s *Schema) compileTerm(t aip160.Term) (Expr, error) {
 	var (
 		expr Expr
 		err  error
@@ -197,7 +197,7 @@ func (s *Schema) compileTerm(t *aip160.Term) (Expr, error) {
 }
 
 func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
-	member := r.Comparable.Member
+	member := r.Member
 	if r.Comparator == "" {
 		return s.compileImplicit(member)
 	}
@@ -223,7 +223,7 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 		)
 	}
 
-	arg := r.Arg.Comparable.Member
+	arg := r.Arg.Member
 	// A bare null is the only literal that crosses every type, and only an
 	// equality can ask about it.
 	if !arg.Quoted() && arg.Path() == "null" {
@@ -262,10 +262,7 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 //
 // The segments are taken one at a time rather than by splitting Member.Path,
 // because a quoted segment may itself contain a dot.
-func memberPath(m *aip160.Member) aip132.FieldPath {
-	if m.Value == nil {
-		return aip132.FieldPath{}
-	}
+func memberPath(m aip160.Member) aip132.FieldPath {
 	segments := make([]string, 0, len(m.Fields)+1)
 	segments = append(segments, m.Value.Value)
 	for _, field := range m.Fields {
@@ -276,7 +273,7 @@ func memberPath(m *aip160.Member) aip132.FieldPath {
 
 // compileImplicit expands a bare value into a search of every field declared
 // implicit, which is what AIP-160 calls a global restriction.
-func (s *Schema) compileImplicit(member *aip160.Member) (Expr, error) {
+func (s *Schema) compileImplicit(member aip160.Member) (Expr, error) {
 	if len(s.implicit) == 0 {
 		return nil, errorf(ErrInvalidFilter, "no field is searched by the bare value %q", member.Input())
 	}
@@ -297,7 +294,7 @@ func (s *Schema) compileImplicit(member *aip160.Member) (Expr, error) {
 // identifiers true and null carry meaning only against a field that is typed
 // to receive them, so quoting one asks for the text. A timestamp is read either
 // way, because the colons of RFC 3339 lex as comparators unless it is quoted.
-func coerce(field *Field, arg *aip160.Member) (any, error) {
+func coerce(field *Field, arg aip160.Member) (any, error) {
 	text := arg.Path()
 	invalid := func(want string) error {
 		return errorf(

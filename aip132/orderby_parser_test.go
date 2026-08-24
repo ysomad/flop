@@ -115,16 +115,8 @@ func TestParseOrderBy(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			p := aip132.NewParser()
-			got, err := p.Parse(test.input)
+			got, err := aip132.ParseOrderBy(test.input)
 			test.wantErr(t, err)
-
-			// A Parser keeps no state between clauses, so the same one reads
-			// the same input the same way twice.
-			again, againErr := p.Parse(test.input)
-			test.wantErr(t, againErr)
-			assert.Equal(t, got, again)
-
 			if err != nil {
 				return
 			}
