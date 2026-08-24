@@ -1,6 +1,7 @@
 package flopsq_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/ysomad/flop"
 	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/flopsq"
 )
 
@@ -43,7 +45,8 @@ var createdAt = time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
 func TestWhere(t *testing.T) {
 	t.Parallel()
 	type args struct {
-		filter string
+		filter      string
+		unvalidated bool
 	}
 	tests := []struct {
 		name     string
@@ -159,14 +162,24 @@ func TestWhere(t *testing.T) {
 			wantErr:  assert.NoError,
 		},
 
-		{name: "undeclared field", args: args{filter: "nope = 1"}, wantErr: assert.Error},
+		{
+			name:    "undeclared field",
+			args:    args{filter: "nope = 1", unvalidated: true},
+			wantErr: assert.Error,
+		},
 		{name: "syntax error", args: args{filter: "age ="}, wantErr: assert.Error},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			filter, err := schema.ParseFilter(test.args.filter)
+			var filter *aip160.Filter
+			var err error
+			if test.args.unvalidated {
+				filter, err = aip160.ParseFilter(test.args.filter)
+			} else {
+				filter, err = schema.ParseFilter(test.args.filter)
+			}
 			if err != nil {
 				test.wantErr(t, err)
 				return
@@ -420,6 +433,22 @@ func TestQuery(t *testing.T) {
 			assert.Equal(t, test.wantArgs, gotArgs)
 		})
 	}
+
+	t.Run("invalid filter", func(t *testing.T) {
+		t.Parallel()
+		filter, err := aip160.ParseFilter("nope = 1")
+		assert.NoError(t, err)
+		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, nil, filter)
+		assert.Error(t, err)
+	})
+
+	t.Run("invalid order", func(t *testing.T) {
+		t.Parallel()
+		order, err := aip132.ParseOrderBy("nope")
+		assert.NoError(t, err)
+		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, order, nil)
+		assert.Error(t, err)
+	})
 }
 
 func TestOffsetQuery(t *testing.T) {
@@ -428,19 +457,71 @@ func TestOffsetQuery(t *testing.T) {
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
-	b, err := flopsq.OffsetQuery(
-		sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
-		schema, order, filter, 3, 20,
-	)
+	invalidFilter, err := aip160.ParseFilter("nope = 1")
 	assert.NoError(t, err)
-	got, gotArgs, err := b.ToSql()
+	invalidOrder, err := aip132.ParseOrderBy("nope")
 	assert.NoError(t, err)
-	assert.Equal(
-		t,
-		"SELECT * FROM users u WHERE u.active = $1 ORDER BY u.created_at DESC, u.id LIMIT 20 OFFSET 40",
-		got,
-	)
-	assert.Equal(t, []any{true}, gotArgs)
+
+	type args struct {
+		order    []aip132.OrderBy
+		filter   *aip160.Filter
+		page     int32
+		pageSize int32
+	}
+	tests := []struct {
+		name     string
+		args     args
+		want     string
+		wantArgs []any
+		wantErr  errorFunc
+	}{
+		{
+			name: "page",
+			args: args{order: order, filter: filter, page: 3, pageSize: 20},
+			want: "SELECT * FROM users u WHERE u.active = $1 " +
+				"ORDER BY u.created_at DESC, u.id LIMIT 20 OFFSET 40",
+			wantArgs: []any{true},
+			wantErr:  assert.NoError,
+		},
+		{
+			name:    "negative page",
+			args:    args{page: -1, pageSize: 20},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "non-positive page size",
+			args:    args{page: 1},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "invalid filter",
+			args:    args{filter: invalidFilter, page: 1, pageSize: 20},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "invalid order",
+			args:    args{order: invalidOrder, page: 1, pageSize: 20},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			b, gotErr := flopsq.OffsetQuery(
+				sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
+				schema, test.args.order, test.args.filter, test.args.page, test.args.pageSize,
+			)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				return
+			}
+			got, gotArgs, err := b.ToSql()
+			assert.NoError(t, err)
+			assert.Equal(t, test.want, got)
+			assert.Equal(t, test.wantArgs, gotArgs)
+		})
+	}
 }
 
 func TestCursorQuery(t *testing.T) {
@@ -449,42 +530,97 @@ func TestCursorQuery(t *testing.T) {
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
-
-	// A first page has no position, so it seeks from the start.
-	b, err := flopsq.CursorQuery(
-		sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
-		schema, order, filter, nil, 2, 0,
-	)
-	assert.NoError(t, err)
-	got, gotArgs, err := b.ToSql()
-	assert.NoError(t, err)
-	assert.Equal(
-		t,
-		"SELECT * FROM users u WHERE u.active = $1 ORDER BY u.created_at DESC, u.id LIMIT 3",
-		got,
-	)
-	assert.Equal(t, []any{true}, gotArgs)
-
-	// The cursor the first page issues seeks past the row it names, and the
-	// skip AIP-158 allows becomes an offset from there.
 	token, err := schema.EncodeCursor(user{ID: 7, CreatedAt: createdAt}, order, filter)
 	assert.NoError(t, err)
-	assert.NotEqual(t, "", token)
-
 	after, err := schema.DecodeCursor(token, order, filter)
 	assert.NoError(t, err)
-	b, err = flopsq.CursorQuery(
-		sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
-		schema, order, filter, after, 2, 5,
-	)
+	invalidFilter, err := aip160.ParseFilter("nope = 1")
 	assert.NoError(t, err)
-	got, gotArgs, err = b.ToSql()
+	invalidOrder, err := aip132.ParseOrderBy("nope")
 	assert.NoError(t, err)
-	assert.Equal(
-		t,
-		"SELECT * FROM users u WHERE u.active = $1 AND (u.created_at < $2 OR (u.created_at = $3 AND u.id > $4)) "+
-			"ORDER BY u.created_at DESC, u.id LIMIT 3 OFFSET 5",
-		got,
-	)
-	assert.Equal(t, []any{true, createdAt, createdAt, int64(7)}, gotArgs)
+	nonUniqueOrder, err := aip132.ParseOrderBy("created_at")
+	assert.NoError(t, err)
+
+	type args struct {
+		order    []aip132.OrderBy
+		filter   *aip160.Filter
+		after    flop.CursorPosition
+		pageSize int32
+		skip     int32
+	}
+	tests := []struct {
+		name     string
+		args     args
+		want     string
+		wantArgs []any
+		wantErr  errorFunc
+	}{
+		{
+			name: "first page",
+			args: args{order: order, filter: filter, pageSize: 2},
+			want: "SELECT * FROM users u WHERE u.active = $1 " +
+				"ORDER BY u.created_at DESC, u.id LIMIT 3",
+			wantArgs: []any{true},
+			wantErr:  assert.NoError,
+		},
+		{
+			name: "position and skip",
+			args: args{order: order, filter: filter, after: after, pageSize: 2, skip: 5},
+			want: "SELECT * FROM users u WHERE u.active = $1 AND " +
+				"(u.created_at < $2 OR (u.created_at = $3 AND u.id > $4)) " +
+				"ORDER BY u.created_at DESC, u.id LIMIT 3 OFFSET 5",
+			wantArgs: []any{true, createdAt, createdAt, int64(7)},
+			wantErr:  assert.NoError,
+		},
+		{
+			name:    "maximum page size saturates the surplus row",
+			args:    args{order: order, pageSize: math.MaxInt32},
+			want:    "SELECT * FROM users u ORDER BY u.created_at DESC, u.id LIMIT 2147483647",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "non-positive page size",
+			args:    args{order: order},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "negative skip",
+			args:    args{order: order, pageSize: 2, skip: -1},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "invalid filter",
+			args:    args{order: order, filter: invalidFilter, pageSize: 2},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "invalid order",
+			args:    args{order: invalidOrder, pageSize: 2},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "order without a unique field",
+			args:    args{order: nonUniqueOrder, pageSize: 2},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			b, gotErr := flopsq.CursorQuery(
+				sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
+				schema, test.args.order, test.args.filter, test.args.after,
+				test.args.pageSize, test.args.skip,
+			)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				return
+			}
+			got, gotArgs, err := b.ToSql()
+			assert.NoError(t, err)
+			assert.Equal(t, test.want, got)
+			assert.Equal(t, test.wantArgs, gotArgs)
+		})
+	}
 }

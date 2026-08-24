@@ -68,6 +68,124 @@ var cursorSchema = NewSchema(
 
 var cursorCreatedAt = time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
 
+func TestSchema_CompileSeek(t *testing.T) {
+	t.Parallel()
+	createdAtPath := aip132.NewFieldPath("created_at")
+	idPath := aip132.NewFieldPath("id")
+	createdAtField, err := cursorSchema.SortableField(createdAtPath)
+	assert.NoError(t, err)
+	idField, err := cursorSchema.SortableField(idPath)
+	assert.NoError(t, err)
+
+	createdAtAsc := aip132.OrderBy{FieldPath: createdAtPath}
+	createdAtDesc := aip132.OrderBy{FieldPath: createdAtPath, Descending: true}
+	idAsc := aip132.OrderBy{FieldPath: idPath}
+	idDesc := aip132.OrderBy{FieldPath: idPath, Descending: true}
+
+	type args struct {
+		order []aip132.OrderBy
+		pos   CursorPosition
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    Expr
+		wantErr errorFunc
+	}{
+		{
+			name:    "first page",
+			args:    args{order: []aip132.OrderBy{idAsc}},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "single ascending field",
+			args: args{
+				order: []aip132.OrderBy{idAsc},
+				pos:   CursorPosition{{FieldPath: idPath, Value: "users/7"}},
+			},
+			want:    Cmp{Field: idField, Op: OpGt, Value: "users/7"},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "single descending field",
+			args: args{
+				order: []aip132.OrderBy{idDesc},
+				pos:   CursorPosition{{FieldPath: idPath, Value: "users/7"}},
+			},
+			want:    Cmp{Field: idField, Op: OpLt, Value: "users/7"},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "mixed directions",
+			args: args{
+				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				pos: CursorPosition{
+					{FieldPath: createdAtPath, Value: cursorCreatedAt},
+					{FieldPath: idPath, Value: "users/7"},
+				},
+			},
+			want: Or{Exprs: []Expr{
+				Cmp{Field: createdAtField, Op: OpLt, Value: cursorCreatedAt},
+				And{Exprs: []Expr{
+					Cmp{Field: createdAtField, Op: OpEq, Value: cursorCreatedAt},
+					Cmp{Field: idField, Op: OpGt, Value: "users/7"},
+				}},
+			}},
+			wantErr: assert.NoError,
+		},
+		{name: "no order", args: args{}, wantErr: assert.Error},
+		{
+			name:    "unknown ordering field",
+			args:    args{order: []aip132.OrderBy{{FieldPath: aip132.NewFieldPath("nope")}}},
+			wantErr: assert.Error,
+		},
+		{
+			name: "order without a unique field",
+			args: args{
+				order: []aip132.OrderBy{createdAtAsc},
+				pos:   CursorPosition{{FieldPath: createdAtPath, Value: cursorCreatedAt}},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "position does not cover the order",
+			args: args{
+				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				pos:   CursorPosition{{FieldPath: createdAtPath, Value: cursorCreatedAt}},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "position names another field",
+			args: args{
+				order: []aip132.OrderBy{idAsc},
+				pos:   CursorPosition{{FieldPath: createdAtPath, Value: cursorCreatedAt}},
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "null ordering value",
+			args: args{
+				order: []aip132.OrderBy{idAsc},
+				pos:   CursorPosition{{FieldPath: idPath, Value: nil}},
+			},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, gotErr := cursorSchema.CompileSeek(test.args.order, test.args.pos)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				return
+			}
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
 func TestSchema_DecodeCursor(t *testing.T) {
 	t.Parallel()
 	orderBy, err := aip132.ParseOrderBy("created_at desc, id")
