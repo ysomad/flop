@@ -84,13 +84,13 @@ func (Not) isExpr() {}
 func (Cmp) isExpr() {}
 
 // comparators lists the operators each type accepts.
-var comparators = map[Type]map[string]Op{
-	TypeString: {"=": OpEq, "!=": OpNe, ":": OpLike},
-	TypeBool:   {"=": OpEq, "!=": OpNe},
-	TypeInt:    {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
-	TypeFloat:  {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
-	TypeTime:   {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
-	TypeDuration: {
+var comparators = map[fieldType]map[string]Op{
+	fieldTypeString: {"=": OpEq, "!=": OpNe, ":": OpLike},
+	fieldTypeBool:   {"=": OpEq, "!=": OpNe},
+	fieldTypeInt:    {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
+	fieldTypeFloat:  {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
+	fieldTypeTime:   {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
+	fieldTypeDuration: {
 		"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe,
 	},
 }
@@ -308,9 +308,9 @@ func coerce(field *Field, arg *aip160.Member) (any, error) {
 	}
 
 	switch field.typ {
-	case TypeString:
+	case fieldTypeString:
 		return text, nil
-	case TypeInt:
+	case fieldTypeInt:
 		if arg.Quoted() {
 			return nil, invalid("an integer")
 		}
@@ -319,7 +319,7 @@ func coerce(field *Field, arg *aip160.Member) (any, error) {
 			return nil, invalid("an integer")
 		}
 		return value, nil
-	case TypeFloat:
+	case fieldTypeFloat:
 		if arg.Quoted() {
 			return nil, invalid("a number")
 		}
@@ -328,7 +328,7 @@ func coerce(field *Field, arg *aip160.Member) (any, error) {
 			return nil, invalid("a number")
 		}
 		return value, nil
-	case TypeBool:
+	case fieldTypeBool:
 		if arg.Quoted() {
 			return nil, invalid("true or false")
 		}
@@ -339,13 +339,13 @@ func coerce(field *Field, arg *aip160.Member) (any, error) {
 			return false, nil
 		}
 		return nil, invalid("true or false")
-	case TypeTime:
+	case fieldTypeTime:
 		value, err := time.Parse(time.RFC3339, text)
 		if err != nil {
 			return nil, invalid("an RFC 3339 timestamp")
 		}
 		return value, nil
-	case TypeDuration:
+	case fieldTypeDuration:
 		value, err := time.ParseDuration(text)
 		if err != nil {
 			return nil, invalid("a Go duration")

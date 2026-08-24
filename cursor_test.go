@@ -34,36 +34,36 @@ type cursorRow struct {
 // cursorSchema declares every field the cursor tests order by. Only id is
 // unique, so an order that has to be total names it last.
 var cursorSchema = NewSchema(
-	NewField("id").Column("id").String().Unique().
+	NewField("id").Ref("id").String().Unique().
 		Value(func(r cursorRow) any { return r.ID }),
-	NewField("created_at").Column("created_at").Time().Sortable().
+	NewField("created_at").Ref("created_at").Time().Sortable().
 		Value(func(r cursorRow) any { return r.CreatedAt }),
-	NewField("active").Column("active").Bool().Filterable(),
-	NewField("v").Column("v").String().Sortable().
+	NewField("active").Ref("active").Bool().Filterable(),
+	NewField("v").Ref("v").String().Sortable().
 		Value(func(r cursorRow) any { return r.V }),
-	NewField("bool_false").Column("bool_false").Bool().Sortable().
+	NewField("bool_false").Ref("bool_false").Bool().Sortable().
 		Value(func(r cursorRow) any { return r.BoolFalse }),
-	NewField("bool_true").Column("bool_true").Bool().Sortable().
+	NewField("bool_true").Ref("bool_true").Bool().Sortable().
 		Value(func(r cursorRow) any { return r.BoolTrue }),
-	NewField("int_value").Column("int_value").Int().Sortable().
+	NewField("int_value").Ref("int_value").Int().Sortable().
 		Value(func(r cursorRow) any { return r.Int }),
-	NewField("uint_value").Column("uint_value").Int().Sortable().
+	NewField("uint_value").Ref("uint_value").Int().Sortable().
 		Value(func(r cursorRow) any { return r.Uint }),
-	NewField("float_value").Column("float_value").Float().Sortable().
+	NewField("float_value").Ref("float_value").Float().Sortable().
 		Value(func(r cursorRow) any { return r.Float }),
-	NewField("string_value").Column("string_value").String().Sortable().
+	NewField("string_value").Ref("string_value").String().Sortable().
 		Value(func(r cursorRow) any { return r.String }),
-	NewField("bytes_value").Column("bytes_value").String().Sortable().
+	NewField("bytes_value").Ref("bytes_value").String().Sortable().
 		Value(func(r cursorRow) any { return r.Bytes }),
-	NewField("time_value").Column("time_value").Time().Sortable().
+	NewField("time_value").Ref("time_value").Time().Sortable().
 		Value(func(r cursorRow) any { return r.Time }),
-	NewField("duration_value").Column("duration_value").Int().Sortable().
+	NewField("duration_value").Ref("duration_value").Int().Sortable().
 		Value(func(r cursorRow) any { return r.Duration }),
-	NewField("null_value").Column("null_value").String().Sortable().
+	NewField("null_value").Ref("null_value").String().Sortable().
 		Value(func(r cursorRow) any { return r.Null }),
-	NewField("bad_value").Column("bad_value").String().Sortable().
+	NewField("bad_value").Ref("bad_value").String().Sortable().
 		Value(func(r cursorRow) any { return r.Bad }),
-	NewField("no_value").Column("no_value").String().Sortable(),
+	NewField("no_value").Ref("no_value").String().Sortable(),
 ).MustBuild()
 
 var cursorCreatedAt = time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)

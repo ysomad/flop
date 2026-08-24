@@ -19,8 +19,8 @@ pagination for Go 1.27+
 ## Declare a schema
 
 A schema declares the fields a collection exposes and what each may be used
-for. Everything is built on it, and each part is optional: an endpoint may
-filter without sorting, sort without paging, or page without filtering.
+for. Everything is built on it, and each part is optional: a schema may filter
+without sorting, sort without paging, or page without filtering.
 
 ```go
 var payments = flop.NewSchema(
@@ -29,15 +29,15 @@ var payments = flop.NewSchema(
 	flop.NewField("captured_at").Time().Filterable().Sortable().
 	flop.NewField("processing_time").Duration().Filterable().Sortable().
 	flop.NewField("provider").String().Filterable().Implicit(),
-	flop.NewField("tenant_id").Column("t.id").String().Filterable(),
+	flop.NewField("tenant_id").Ref("t.id").String().Filterable(),
 ).MustBuild()
 ```
 
-A field carries two names. Its **path** is the public contract, what a client
-writes in a filter or `order_by`. Its **column** is a storage detail written
-into generated SQL verbatim, so it must be a constant and never user input. The
-column defaults to the path, so only a column that differs — qualified, or named
-differently in storage — is written out.
+A field carries a public **path** and a private backend **ref**. The path is what
+a client writes in a filter or `order_by`. The ref is an opaque value a backend
+uses to address the field. It defaults to the path, so only a differing ref must
+be declared. A ref must be a trusted constant because an adapter may embed it
+directly into query syntax.
 
 | declaration | meaning |
 | --- | --- |
@@ -89,7 +89,7 @@ field. The schema's unique field is appended when the clause does not already
 name it, so the order is total — cursor paging needs that to avoid repeating or
 dropping rows.
 
-`MergeOrder(def, order)` combines a request with an endpoint's default, and
+`MergeOrder(def, order)` combines a request with a schema's default, and
 `Schema.TotalOrder` appends the tie-breaker, for composing an order by hand:
 
 ```go

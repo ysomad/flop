@@ -73,7 +73,7 @@ func conditions(exprs []flop.Expr) ([]sq.Sqlizer, error) {
 }
 
 func condition(c flop.Cmp) (sq.Sqlizer, error) {
-	column := c.Field.Column()
+	column := c.Field.Ref()
 	switch c.Op {
 	case flop.OpEq:
 		return sq.Eq{column: c.Value}, nil
@@ -117,7 +117,7 @@ func OrderBy(s *flop.Schema, order []aip132.OrderBy) ([]string, error) {
 	}
 	parts := make([]string, 0, len(fields))
 	for i, field := range fields {
-		part := field.Column()
+		part := field.Ref()
 		if order[i].Descending {
 			part += " DESC"
 		}

@@ -60,9 +60,9 @@ func (s *Schema) TotalOrder(order []aip132.OrderBy) []aip132.OrderBy {
 	return append(order, aip132.OrderBy{FieldPath: unique})
 }
 
-// MergeOrder combines an order with the default one an endpoint sorts by.
-// Terms in order take precedence, and the terms of def it does not name follow
-// in the order def gives them.
+// MergeOrder combines a requested order with a schema's default. Terms in order
+// take precedence, and the terms of def it does not name follow in the order def
+// gives them.
 func MergeOrder(def, order []aip132.OrderBy) []aip132.OrderBy {
 	merged := make([]aip132.OrderBy, 0, len(order)+len(def))
 	seen := make(map[string]struct{}, len(order))

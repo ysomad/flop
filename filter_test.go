@@ -23,7 +23,7 @@ func renderExpr(e Expr) string {
 	case Not:
 		return "NOT " + renderExpr(node.Expr)
 	case Cmp:
-		return node.Field.Column() + " " + node.Op.String() + " " + renderValue(node.Value)
+		return node.Field.Ref() + " " + node.Op.String() + " " + renderValue(node.Value)
 	}
 	return fmt.Sprintf("unknown node %T", e)
 }
@@ -344,18 +344,18 @@ func TestSchema_ParseFilter(t *testing.T) {
 func filterSchema(t *testing.T) *Schema {
 	t.Helper()
 	s, err := NewSchema(
-		NewField("id").Column("u.id").Int().Unique(),
-		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
-		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
-		NewField("latency").Column("u.latency").Duration().Filterable().Sortable(),
-		NewField("active").Column("u.active").Bool().Filterable(),
-		NewField("rating").Column("u.rating").Float().Filterable(),
-		NewField("age").Column("u.age").Int().Filterable(),
-		NewField("age2").Column("u.age2").Int().Filterable(),
-		NewField("age3").Column("u.age3").Int().Filterable(),
-		NewField("age4").Column("u.age4").Int().Filterable(),
-		NewField("secret").Column("u.secret").String(),
-		NewField("metadata", "tags").Column("m.tags").String().Filterable(),
+		NewField("id").Ref("u.id").Int().Unique(),
+		NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit(),
+		NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable(),
+		NewField("latency").Ref("u.latency").Duration().Filterable().Sortable(),
+		NewField("active").Ref("u.active").Bool().Filterable(),
+		NewField("rating").Ref("u.rating").Float().Filterable(),
+		NewField("age").Ref("u.age").Int().Filterable(),
+		NewField("age2").Ref("u.age2").Int().Filterable(),
+		NewField("age3").Ref("u.age3").Int().Filterable(),
+		NewField("age4").Ref("u.age4").Int().Filterable(),
+		NewField("secret").Ref("u.secret").String(),
+		NewField("metadata", "tags").Ref("m.tags").String().Filterable(),
 	).Build()
 	assert.NoError(t, err)
 	return s
@@ -376,9 +376,9 @@ func TestSchema_Compile_implicitFields(t *testing.T) {
 		{
 			name: "every implicit field is searched",
 			schema: NewSchema(
-				NewField("name").Column("u.name").String().Implicit(),
-				NewField("email").Column("u.email").String().Implicit(),
-				NewField("age").Column("u.age").Int().Filterable(),
+				NewField("name").Ref("u.name").String().Implicit(),
+				NewField("email").Ref("u.email").String().Implicit(),
+				NewField("age").Ref("u.age").Int().Filterable(),
 			).MustBuild(),
 			args:    args{text: "bob"},
 			want:    `(u.name LIKE "%bob%" OR u.email LIKE "%bob%")`,
@@ -387,7 +387,7 @@ func TestSchema_Compile_implicitFields(t *testing.T) {
 		{
 			name: "no implicit field",
 			schema: NewSchema(
-				NewField("name").Column("u.name").String().Filterable(),
+				NewField("name").Ref("u.name").String().Filterable(),
 			).MustBuild(),
 			args:    args{text: "bob"},
 			wantErr: assert.Error,
@@ -451,14 +451,14 @@ func FuzzCompile(f *testing.F) {
 	}
 
 	schema := NewSchema(
-		NewField("id").Column("u.id").Int().Unique(),
-		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
-		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
-		NewField("latency").Column("u.latency").Duration().Filterable().Sortable(),
-		NewField("active").Column("u.active").Bool().Filterable(),
-		NewField("rating").Column("u.rating").Float().Filterable(),
-		NewField("age").Column("u.age").Int().Filterable(),
-		NewField("metadata", "tags").Column("m.tags").String().Filterable(),
+		NewField("id").Ref("u.id").Int().Unique(),
+		NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit(),
+		NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable(),
+		NewField("latency").Ref("u.latency").Duration().Filterable().Sortable(),
+		NewField("active").Ref("u.active").Bool().Filterable(),
+		NewField("rating").Ref("u.rating").Float().Filterable(),
+		NewField("age").Ref("u.age").Int().Filterable(),
+		NewField("metadata", "tags").Ref("m.tags").String().Filterable(),
 	).MustBuild()
 
 	f.Fuzz(func(t *testing.T, input string) {

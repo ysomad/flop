@@ -83,7 +83,7 @@ const (
 // from one table whose columns are named exactly as clients name the fields. A
 // joined query would qualify them, and only the column changes:
 //
-//	flop.NewField("user_id").Column("u.id").String().Filterable().Sortable(),
+//	flop.NewField("user_id").Ref("u.id").String().Filterable().Sortable(),
 func mustPaymentSchema() *flop.Schema {
 	return flop.NewSchema(
 		flop.NewField("id").String().Filterable().Unique().
@@ -101,7 +101,7 @@ func mustPaymentSchema() *flop.Schema {
 }
 
 // pageSize clamps what a client asks for. flop takes no view on it: it refuses
-// a page size that is not positive and leaves the bounds to the endpoint.
+// a page size that is not positive and leaves the bounds to the caller.
 func pageSize(requested int32) int32 {
 	switch {
 	case requested <= 0:
@@ -349,7 +349,7 @@ func scanPayments(rows pgx.Rows) ([]payment, error) {
 }
 
 // parseListRequest validates the order and filter a client sent against the
-// schema, so an endpoint rejects a bad one before it reaches the database.
+// schema, rejecting a bad one before it reaches the database.
 func parseListRequest(req listRequest) ([]aip132.OrderBy, *aip160.Filter, error) {
 	f, err := paymentSchema.ParseFilter(req.Filter)
 	if err != nil {

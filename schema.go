@@ -7,32 +7,32 @@ import (
 	"github.com/ysomad/flop/aip132"
 )
 
-// Type is the type a field's values carry. It decides which comparators a
+// fieldType is the type a field's values carry. It decides which comparators a
 // field accepts and what Go type its arguments coerce to.
-type Type uint8
+type fieldType uint8
 
 const (
-	TypeString Type = iota + 1
-	TypeInt
-	TypeFloat
-	TypeBool
-	TypeTime
-	TypeDuration
+	fieldTypeString fieldType = iota + 1
+	fieldTypeInt
+	fieldTypeFloat
+	fieldTypeBool
+	fieldTypeTime
+	fieldTypeDuration
 )
 
-func (t Type) String() string {
+func (t fieldType) String() string {
 	switch t {
-	case TypeString:
+	case fieldTypeString:
 		return "string"
-	case TypeInt:
+	case fieldTypeInt:
 		return "int"
-	case TypeFloat:
+	case fieldTypeFloat:
 		return "float"
-	case TypeBool:
+	case fieldTypeBool:
 		return "bool"
-	case TypeTime:
+	case fieldTypeTime:
 		return "time"
-	case TypeDuration:
+	case fieldTypeDuration:
 		return "duration"
 	}
 	return fmt.Sprintf("Type(%d)", int(t))
@@ -40,27 +40,24 @@ func (t Type) String() string {
 
 // Field is one field of a collection, declared with [NewField].
 //
-// A field has two names, pointing opposite ways. The path is the public
-// contract: what a client writes in a filter or order_by, what errors name it
-// by, and what a cursor is bound to. The column is what generated SQL selects
-// it by, and never leaves the server. The two are free to differ:
+// A field has a public path and a private backend reference. The path is what a
+// client writes in a filter or order_by, what errors name the field by, and what
+// a cursor is bound to. The ref is what generated queries use. The two are free
+// to differ:
 //
-//	flop.NewField("user_id").Column("u.id").Int().Filterable().Sortable().
+//	flop.NewField("user_id").Ref("u.id").Int().Filterable().Sortable().
 //		Value(func(u user) any { return u.ID })
 //
-// so a request filtering on user_id > 7 emits u.id > $1. A field that declares
-// no column selects the one its path names, which is what a collection drawn
-// from a single table wants. Declare one for a path that AIP-161 quotes, since
-// the backticks would otherwise reach the query.
+// A ref defaults to the path. Declare one when a backend addresses the field by
+// another name or syntax.
 //
-// Renaming a column is invisible to clients. Renaming a path is a breaking
-// change to the API: filters clients already send stop resolving, and cursors
-// they already hold stop matching, because the binding is taken over the paths
-// the order names.
+// Renaming a ref is invisible to clients. Renaming a path is a breaking change:
+// filters clients already send stop resolving, and cursors they already hold
+// stop matching, because the binding is taken over the paths the order names.
 type Field struct {
-	path   aip132.FieldPath
-	column string
-	typ    Type
+	path aip132.FieldPath
+	ref  string
+	typ  fieldType
 
 	filterable bool
 	sortable   bool
@@ -70,29 +67,11 @@ type Field struct {
 	value func(any) (any, bool)
 }
 
-// Path returns the field path clients name the field by. It is the public half
-// of the field: see [Field] for how it relates to the column.
+// Path returns the field path clients name the field by.
 func (f *Field) Path() aip132.FieldPath { return f.path }
 
-// Column returns the storage name generated queries refer to the field by. It
-// is the private half of the field: see [Field] for how it relates to the path.
-func (f *Field) Column() string { return f.column }
-
-// Type returns the type the field's values carry.
-func (f *Field) Type() Type { return f.typ }
-
-// Filterable reports whether the field may appear in a filter.
-func (f *Field) Filterable() bool { return f.filterable }
-
-// Sortable reports whether the field may appear in an order_by.
-func (f *Field) Sortable() bool { return f.sortable }
-
-// Implicit reports whether a bare filter value searches this field.
-func (f *Field) Implicit() bool { return f.implicit }
-
-// Unique reports whether the field orders rows totally on its own, making it
-// a valid tie-breaker for cursor pagination.
-func (f *Field) Unique() bool { return f.unique }
+// Ref returns the backend reference generated queries use for the field.
+func (f *Field) Ref() string { return f.ref }
 
 // FieldBuilder builds a [Field].
 type FieldBuilder struct {
@@ -106,39 +85,35 @@ func NewField(segments ...string) *FieldBuilder {
 	return &FieldBuilder{field: Field{path: aip132.NewFieldPath(segments...)}}
 }
 
-// Column sets the storage name generated queries use, such as "u.created_at".
-// It defaults to the field's path, so only a column that differs from it has to
-// be declared. It is independent of the path clients filter and sort by, so a
-// column may be renamed, qualified or moved to another table without breaking a
-// request.
+// Ref sets the backend reference generated queries use. It defaults to the
+// field's path, so only a ref that differs from it has to be declared.
 //
-// Only assign constants. The name is written into SQL as given, and it is the
-// one part of a declaration that is: every value a request carries is bound as
-// an argument instead. User input reaching here is a SQL injection.
-func (b *FieldBuilder) Column(name string) *FieldBuilder {
-	b.field.column = name
+// Only assign trusted constants. An adapter may embed the ref directly into its
+// query syntax; user input reaching it can become an injection vulnerability.
+func (b *FieldBuilder) Ref(ref string) *FieldBuilder {
+	b.field.ref = ref
 	return b
 }
 
 // String types the field as text.
-func (b *FieldBuilder) String() *FieldBuilder { return b.withType(TypeString) }
+func (b *FieldBuilder) String() *FieldBuilder { return b.withType(fieldTypeString) }
 
 // Int types the field as a 64-bit signed integer.
-func (b *FieldBuilder) Int() *FieldBuilder { return b.withType(TypeInt) }
+func (b *FieldBuilder) Int() *FieldBuilder { return b.withType(fieldTypeInt) }
 
 // Float types the field as a 64-bit float.
-func (b *FieldBuilder) Float() *FieldBuilder { return b.withType(TypeFloat) }
+func (b *FieldBuilder) Float() *FieldBuilder { return b.withType(fieldTypeFloat) }
 
 // Bool types the field as a boolean.
-func (b *FieldBuilder) Bool() *FieldBuilder { return b.withType(TypeBool) }
+func (b *FieldBuilder) Bool() *FieldBuilder { return b.withType(fieldTypeBool) }
 
 // Time types the field as an RFC 3339 timestamp.
-func (b *FieldBuilder) Time() *FieldBuilder { return b.withType(TypeTime) }
+func (b *FieldBuilder) Time() *FieldBuilder { return b.withType(fieldTypeTime) }
 
 // Duration types the field as a Go duration, such as 250ms or 2h30m.
-func (b *FieldBuilder) Duration() *FieldBuilder { return b.withType(TypeDuration) }
+func (b *FieldBuilder) Duration() *FieldBuilder { return b.withType(fieldTypeDuration) }
 
-func (b *FieldBuilder) withType(t Type) *FieldBuilder {
+func (b *FieldBuilder) withType(t fieldType) *FieldBuilder {
 	b.field.typ = t
 	return b
 }
@@ -213,8 +188,8 @@ func (b *SchemaBuilder) Build() (*Schema, error) {
 			return nil, errorf(ErrDeclaration, "field is nil")
 		}
 		f := &field.field
-		if f.column == "" {
-			f.column = f.path.String()
+		if f.ref == "" {
+			f.ref = f.path.String()
 		}
 		s.fields = append(s.fields, f)
 		path := f.path.String()
@@ -230,7 +205,7 @@ func (b *SchemaBuilder) Build() (*Schema, error) {
 				"field %q is not sortable, so its value is never read", path,
 			)
 		}
-		if f.implicit && f.typ != TypeString {
+		if f.implicit && f.typ != fieldTypeString {
 			return nil, errorf(ErrDeclaration, "field %q is %s, so it cannot be implicit", path, f.typ)
 		}
 		if _, ok := s.byPath[path]; ok {
@@ -279,7 +254,7 @@ func (s *Schema) FilterableField(path aip132.FieldPath) (*Field, error) {
 	return nil, errorf(
 		ErrInvalidFilter,
 		"no filterable field %q, valid fields are %s",
-		path.String(), s.fieldList((*Field).Filterable),
+		path.String(), s.fieldList(func(f *Field) bool { return f.filterable }),
 	)
 }
 
@@ -291,7 +266,7 @@ func (s *Schema) SortableField(path aip132.FieldPath) (*Field, error) {
 	return nil, errorf(
 		ErrInvalidOrder,
 		"no sortable field %q, valid fields are %s",
-		path.String(), s.fieldList((*Field).Sortable),
+		path.String(), s.fieldList(func(f *Field) bool { return f.sortable }),
 	)
 }
 

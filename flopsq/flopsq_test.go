@@ -27,17 +27,17 @@ type user struct {
 }
 
 var schema = flop.NewSchema(
-	flop.NewField("id").Column("u.id").Int().Unique().
+	flop.NewField("id").Ref("u.id").Int().Unique().
 		Value(func(u user) any { return u.ID }),
-	flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit().
+	flop.NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit().
 		Value(func(u user) any { return u.Name }),
-	flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable().
+	flop.NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable().
 		Value(func(u user) any { return u.CreatedAt }),
-	flop.NewField("latency").Column("u.latency").Duration().Filterable(),
-	flop.NewField("active").Column("u.active").Bool().Filterable(),
-	flop.NewField("rating").Column("u.rating").Float().Filterable().Sortable().
+	flop.NewField("latency").Ref("u.latency").Duration().Filterable(),
+	flop.NewField("active").Ref("u.active").Bool().Filterable(),
+	flop.NewField("rating").Ref("u.rating").Float().Filterable().Sortable().
 		Value(func(u user) any { return u.Rating }),
-	flop.NewField("age").Column("u.age").Int().Filterable(),
+	flop.NewField("age").Ref("u.age").Int().Filterable(),
 ).MustBuild()
 
 var createdAt = time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)

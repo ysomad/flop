@@ -57,7 +57,7 @@ func (s *Schema) seekableFields(order []aip132.OrderBy) ([]*Field, error) {
 	if len(fields) == 0 {
 		return nil, errorf(ErrDeclaration, "seeking needs an order")
 	}
-	if !slices.ContainsFunc(fields, (*Field).Unique) {
+	if !slices.ContainsFunc(fields, func(field *Field) bool { return field.unique }) {
 		return nil, errorf(
 			ErrDeclaration,
 			"seeking needs a unique field in the order, and %q has none",

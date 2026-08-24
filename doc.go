@@ -3,18 +3,18 @@
 //
 // A [Schema] declares the fields a collection exposes and which of them may be
 // filtered, sorted or paged by. Everything else is built on it, and each part
-// is optional: an endpoint may filter without sorting, sort without paging, or
-// page without a schema at all.
+// is optional: a schema may filter without sorting or sort without paging, and
+// page-number pagination needs no schema.
 //
 //	var users = flop.NewSchema(
-//		flop.NewField("id").Column("u.id").Int().Unique(),
-//		flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
-//		flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+//		flop.NewField("id").Ref("u.id").Int().Unique(),
+//		flop.NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit(),
+//		flop.NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable(),
 //	).MustBuild()
 //
-// A field carries two names. Its path is the public contract, what a client
-// writes in a filter or order_by clause. Its column is a storage detail written
-// into generated SQL verbatim, so it must be a constant and never user input.
+// A field carries a public path and a private backend ref. The path is what a
+// client writes in a filter or order_by clause. The ref is an opaque value a
+// backend uses to address the field and must be a trusted constant.
 //
 // [Schema.ParseFilter] and [Schema.ParseOrder] validate a request and return
 // the AIP types. flop holds no request state of its own: an order, a filter and

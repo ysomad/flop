@@ -7,9 +7,8 @@ import (
 
 var (
 	// ErrInvalidFilter reports a filter flop refuses: one that does not parse,
-	// names an undeclared field, carries a value of the wrong type, uses an
-	// operator the field does not accept, or arrives at an endpoint where
-	// filtering is disabled.
+	// names an undeclared or non-filterable field, carries a value of the wrong
+	// type, or uses an operator the field does not accept.
 	ErrInvalidFilter = errors.New("flop: invalid filter")
 
 	// ErrInvalidCursor reports a cursor that is malformed, truncated, or
@@ -33,8 +32,8 @@ var (
 	// ErrInvalidSkip reports a negative number of results to skip.
 	ErrInvalidSkip = errors.New("flop: invalid skip")
 
-	// ErrDeclaration reports an endpoint declared wrongly. Constructors return
-	// it and no input can provoke it, so it always marks a programmer mistake.
+	// ErrDeclaration reports invalid schema or pagination setup. No client input
+	// can provoke it, so it always marks a programmer mistake.
 	ErrDeclaration = errors.New("flop: invalid declaration")
 )
 
