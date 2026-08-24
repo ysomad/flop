@@ -15,7 +15,7 @@
 // Modified in 2026 by the flop authors. See NOTICE for source and attribution
 // details.
 
-package aip160
+package filter
 
 // This file contains a lexer and parser for AIP-160 filter expressions.
 // The EBNF is at https://google.aip.dev/assets/misc/ebnf-filtering.txt
@@ -70,16 +70,12 @@ type token struct {
 	space bool
 }
 
-type filterLexer struct {
+type lexer struct {
 	input string
 	next  *token
 }
 
-func newLexer(input string) *filterLexer {
-	return &filterLexer{input: input}
-}
-
-func (l *filterLexer) Peek() (*token, error) {
+func (l *lexer) Peek() (*token, error) {
 	if l.next == nil {
 		var err error
 		l.next, err = l.Next()
@@ -90,7 +86,7 @@ func (l *filterLexer) Peek() (*token, error) {
 	return l.next, nil
 }
 
-func (l *filterLexer) Next() (*token, error) {
+func (l *lexer) Next() (*token, error) {
 	if l.next != nil {
 		next := l.next
 		l.next = nil
@@ -109,7 +105,7 @@ func (l *filterLexer) Next() (*token, error) {
 
 // lex reads the next token from the head of the input, which the caller has
 // already stripped of leading whitespace.
-func (l *filterLexer) lex() (*token, error) {
+func (l *lexer) lex() (*token, error) {
 	if l.input == "" {
 		return &token{kind: kindEnd}, nil
 	}
@@ -528,17 +524,14 @@ func (v Value) Input() string {
 	return v.Value
 }
 
-// ParseFilter an AIP-160 filter string into an AST.
-func ParseFilter(filter string) (*Filter, error) {
-	return newParser(filter).filter()
+// Parse parses an AIP-160 filter string into an AST.
+func Parse(text string) (*Filter, error) {
+	p := parser{lexer: lexer{input: text}}
+	return p.filter()
 }
 
 type parser struct {
-	lexer filterLexer
-}
-
-func newParser(input string) *parser {
-	return &parser{lexer: *newLexer(input)}
+	lexer lexer
 }
 
 func (p *parser) expect(kind string) error {

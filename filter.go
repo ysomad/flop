@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
+	"github.com/ysomad/flop/filter"
+	"github.com/ysomad/flop/orderby"
 )
 
 // Op is the comparison a [Cmp] makes.
@@ -103,21 +103,21 @@ var likeReplacer = strings.NewReplacer(
 )
 
 // ParseFilter parses an AIP-160 filter and validates it against the schema.
-func (s *Schema) ParseFilter(text string) (*aip160.Filter, error) {
-	filter, err := aip160.ParseFilter(text)
+func (s *Schema) ParseFilter(text string) (*filter.Filter, error) {
+	f, err := filter.Parse(text)
 	if err != nil {
 		return nil, errorf(ErrInvalidFilter, "%v", err)
 	}
-	if err := s.ValidateFilter(filter); err != nil {
+	if err := s.ValidateFilter(f); err != nil {
 		return nil, err
 	}
-	return filter, nil
+	return f, nil
 }
 
 // ValidateFilter reports whether every restriction names a filterable field,
 // uses an operator that field accepts, and carries a value of its type.
-func (s *Schema) ValidateFilter(filter *aip160.Filter) error {
-	_, err := s.Compile(filter)
+func (s *Schema) ValidateFilter(f *filter.Filter) error {
+	_, err := s.Compile(f)
 	return err
 }
 
@@ -125,14 +125,14 @@ func (s *Schema) ValidateFilter(filter *aip160.Filter) error {
 // the Go value its field's type calls for.
 //
 // A nil or empty filter compiles to a nil Expr, meaning match everything.
-func (s *Schema) Compile(filter *aip160.Filter) (Expr, error) {
-	if filter == nil || filter.Expression == nil {
+func (s *Schema) Compile(f *filter.Filter) (Expr, error) {
+	if f == nil || f.Expression == nil {
 		return nil, nil
 	}
-	return s.compileExpression(filter.Expression)
+	return s.compileExpression(f.Expression)
 }
 
-func (s *Schema) compileExpression(e *aip160.Expression) (Expr, error) {
+func (s *Schema) compileExpression(e *filter.Expression) (Expr, error) {
 	// A sequence carries the same meaning as AND under exact-match semantics,
 	// which is all a database can offer, so both levels flatten into one And.
 	var exprs []Expr
@@ -156,7 +156,7 @@ func (s *Schema) compileExpression(e *aip160.Expression) (Expr, error) {
 	return And{Exprs: exprs}, nil
 }
 
-func (s *Schema) compileFactor(f *aip160.Factor) (Expr, error) {
+func (s *Schema) compileFactor(f *filter.Factor) (Expr, error) {
 	exprs := make([]Expr, 0, len(f.Terms))
 	for _, term := range f.Terms {
 		expr, err := s.compileTerm(term)
@@ -174,7 +174,7 @@ func (s *Schema) compileFactor(f *aip160.Factor) (Expr, error) {
 	return Or{Exprs: exprs}, nil
 }
 
-func (s *Schema) compileTerm(t *aip160.Term) (Expr, error) {
+func (s *Schema) compileTerm(t *filter.Term) (Expr, error) {
 	var (
 		expr Expr
 		err  error
@@ -196,7 +196,7 @@ func (s *Schema) compileTerm(t *aip160.Term) (Expr, error) {
 	return expr, nil
 }
 
-func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
+func (s *Schema) compileRestriction(r *filter.Restriction) (Expr, error) {
 	member := r.Comparable.Member
 	if r.Comparator == "" {
 		return s.compileImplicit(member)
@@ -262,21 +262,21 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 //
 // The segments are taken one at a time rather than by splitting Member.Path,
 // because a quoted segment may itself contain a dot.
-func memberPath(m *aip160.Member) aip132.FieldPath {
+func memberPath(m *filter.Member) orderby.FieldPath {
 	if m.Value == nil {
-		return aip132.FieldPath{}
+		return orderby.FieldPath{}
 	}
 	segments := make([]string, 0, len(m.Fields)+1)
 	segments = append(segments, m.Value.Value)
 	for _, field := range m.Fields {
 		segments = append(segments, field.Value)
 	}
-	return aip132.NewFieldPath(segments...)
+	return orderby.NewFieldPath(segments...)
 }
 
 // compileImplicit expands a bare value into a search of every field declared
 // implicit, which is what AIP-160 calls a global restriction.
-func (s *Schema) compileImplicit(member *aip160.Member) (Expr, error) {
+func (s *Schema) compileImplicit(member *filter.Member) (Expr, error) {
 	if len(s.implicit) == 0 {
 		return nil, errorf(ErrInvalidFilter, "no field is searched by the bare value %q", member.Input())
 	}
@@ -297,7 +297,7 @@ func (s *Schema) compileImplicit(member *aip160.Member) (Expr, error) {
 // identifiers true and null carry meaning only against a field that is typed
 // to receive them, so quoting one asks for the text. A timestamp is read either
 // way, because the colons of RFC 3339 lex as comparators unless it is quoted.
-func coerce(field *Field, arg *aip160.Member) (any, error) {
+func coerce(field *Field, arg *filter.Member) (any, error) {
 	text := arg.Path()
 	invalid := func(want string) error {
 		return errorf(

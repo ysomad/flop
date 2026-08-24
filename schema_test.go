@@ -3,8 +3,8 @@ package flop
 import (
 	"testing"
 
-	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/internal/assert"
+	"github.com/ysomad/flop/orderby"
 )
 
 func TestSchemaBuilder_Build(t *testing.T) {
@@ -152,7 +152,7 @@ func testSchema(t *testing.T) *Schema {
 func TestSchema_FilterableField(t *testing.T) {
 	t.Parallel()
 	type args struct {
-		path aip132.FieldPath
+		path orderby.FieldPath
 	}
 	tests := []struct {
 		name    string
@@ -162,27 +162,27 @@ func TestSchema_FilterableField(t *testing.T) {
 	}{
 		{
 			name:    "filterable",
-			args:    args{path: aip132.NewFieldPath("display_name")},
+			args:    args{path: orderby.NewFieldPath("display_name")},
 			wantRef: "u.name",
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "multi segment path",
-			args:    args{path: aip132.NewFieldPath("metadata", "tags")},
+			args:    args{path: orderby.NewFieldPath("metadata", "tags")},
 			wantRef: "m.tags",
 			wantErr: assert.NoError,
 		},
-		{name: "declared but not filterable", args: args{path: aip132.NewFieldPath("secret")}, wantErr: assert.Error},
-		{name: "undeclared", args: args{path: aip132.NewFieldPath("nope")}, wantErr: assert.Error},
+		{name: "declared but not filterable", args: args{path: orderby.NewFieldPath("secret")}, wantErr: assert.Error},
+		{name: "undeclared", args: args{path: orderby.NewFieldPath("nope")}, wantErr: assert.Error},
 		{
 			// Lookup is exact: a prefix of a declared path is not the field.
 			name:    "prefix of a declared path",
-			args:    args{path: aip132.NewFieldPath("metadata")},
+			args:    args{path: orderby.NewFieldPath("metadata")},
 			wantErr: assert.Error,
 		},
 		{
 			name:    "declared path with an extra segment",
-			args:    args{path: aip132.NewFieldPath("display_name", "extra")},
+			args:    args{path: orderby.NewFieldPath("display_name", "extra")},
 			wantErr: assert.Error,
 		},
 	}
@@ -203,7 +203,7 @@ func TestSchema_FilterableField(t *testing.T) {
 func TestSchema_SortableField(t *testing.T) {
 	t.Parallel()
 	type args struct {
-		path aip132.FieldPath
+		path orderby.FieldPath
 	}
 	tests := []struct {
 		name    string
@@ -213,18 +213,18 @@ func TestSchema_SortableField(t *testing.T) {
 	}{
 		{
 			name:    "sortable",
-			args:    args{path: aip132.NewFieldPath("created_at")},
+			args:    args{path: orderby.NewFieldPath("created_at")},
 			wantRef: "u.created_at",
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "unique implies sortable",
-			args:    args{path: aip132.NewFieldPath("id")},
+			args:    args{path: orderby.NewFieldPath("id")},
 			wantRef: "u.id",
 			wantErr: assert.NoError,
 		},
-		{name: "filterable but not sortable", args: args{path: aip132.NewFieldPath("active")}, wantErr: assert.Error},
-		{name: "undeclared", args: args{path: aip132.NewFieldPath("nope")}, wantErr: assert.Error},
+		{name: "filterable but not sortable", args: args{path: orderby.NewFieldPath("active")}, wantErr: assert.Error},
+		{name: "undeclared", args: args{path: orderby.NewFieldPath("nope")}, wantErr: assert.Error},
 	}
 
 	for _, test := range tests {
@@ -243,7 +243,7 @@ func TestSchema_SortableField(t *testing.T) {
 func TestField_accessors(t *testing.T) {
 	t.Parallel()
 	field := &NewField("metadata", "tags").Ref("m.tags").String().field
-	assert.Equal(t, aip132.NewFieldPath("metadata", "tags"), field.Path())
+	assert.Equal(t, orderby.NewFieldPath("metadata", "tags"), field.Path())
 	assert.Equal(t, "m.tags", field.Ref())
 }
 

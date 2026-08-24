@@ -15,7 +15,7 @@
 // Modified in 2026 by the flop authors. See NOTICE for source and attribution
 // details.
 
-package aip132
+package orderby
 
 // This file contains a scanner and parser for AIP-132 order_by clauses.
 //
@@ -104,16 +104,16 @@ func (f FieldPath) GetSegments() []string {
 	return f.segments
 }
 
-// ParseOrderBy parses an AIP-132 order_by list. The method validates the
-// syntax is correct and each identifier appears at most once, but
-// it does not validate the identifiers themselves are valid.
-func ParseOrderBy(text string) ([]OrderBy, error) {
+// Parse parses an AIP-132 order_by list. It validates the syntax is correct
+// and each identifier appears at most once, but it does not validate the
+// identifiers themselves are valid.
+func Parse(text string) ([]OrderBy, error) {
 	// Empty order_by list.
 	if strings.Trim(text, " ") == "" {
 		return nil, nil
 	}
 
-	s := &orderByScanner{input: text}
+	s := scanner{input: text}
 	result, err := s.list()
 	if err != nil {
 		return nil, fmt.Errorf("syntax error: %w", err)
@@ -151,21 +151,21 @@ func isLiteralByte(c byte) bool {
 	return isLiteralStart(c) || ('0' <= c && c <= '9')
 }
 
-// orderByScanner parses an order_by clause directly from its bytes. Every
+// scanner parses an order_by clause directly from its bytes. Every
 // character the grammar recognises is ASCII, so a byte at a time is enough:
 // a multi-byte rune can only appear inside a quoted segment, where it is
 // copied through, or outside one, where it is a syntax error either way.
-type orderByScanner struct {
+type scanner struct {
 	input string
 	pos   int
 }
 
-func (s *orderByScanner) eof() bool {
+func (s *scanner) eof() bool {
 	return s.pos >= len(s.input)
 }
 
 // spaces consumes a run of spaces and reports whether it consumed any.
-func (s *orderByScanner) spaces() bool {
+func (s *scanner) spaces() bool {
 	start := s.pos
 	for s.pos < len(s.input) && s.input[s.pos] == ' ' {
 		s.pos++
@@ -173,7 +173,7 @@ func (s *orderByScanner) spaces() bool {
 	return s.pos > start
 }
 
-func (s *orderByScanner) accept(c byte) bool {
+func (s *scanner) accept(c byte) bool {
 	if s.eof() || s.input[s.pos] != c {
 		return false
 	}
@@ -181,7 +181,7 @@ func (s *orderByScanner) accept(c byte) bool {
 	return true
 }
 
-func (s *orderByScanner) literal() (string, bool) {
+func (s *scanner) literal() (string, bool) {
 	if s.eof() || !isLiteralStart(s.input[s.pos]) {
 		return "", false
 	}
@@ -193,7 +193,7 @@ func (s *orderByScanner) literal() (string, bool) {
 	return s.input[start:s.pos], true
 }
 
-func (s *orderByScanner) quoted() (string, error) {
+func (s *scanner) quoted() (string, error) {
 	s.pos++ // opening backtick
 	var b strings.Builder
 	for s.pos < len(s.input) {
@@ -215,7 +215,7 @@ func (s *orderByScanner) quoted() (string, error) {
 	return "", fmt.Errorf("unterminated quoted segment at offset %d", s.pos)
 }
 
-func (s *orderByScanner) segment() (string, error) {
+func (s *scanner) segment() (string, error) {
 	if !s.eof() && s.input[s.pos] == '`' {
 		return s.quoted()
 	}
@@ -225,7 +225,7 @@ func (s *orderByScanner) segment() (string, error) {
 	return "", s.unexpected()
 }
 
-func (s *orderByScanner) fieldPath() ([]string, error) {
+func (s *scanner) fieldPath() ([]string, error) {
 	seg, err := s.segment()
 	if err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (s *orderByScanner) fieldPath() ([]string, error) {
 	}
 }
 
-func (s *orderByScanner) clause() (OrderBy, error) {
+func (s *scanner) clause() (OrderBy, error) {
 	segments, err := s.fieldPath()
 	if err != nil {
 		return OrderBy{}, err
@@ -265,7 +265,7 @@ func (s *orderByScanner) clause() (OrderBy, error) {
 	return OrderBy{FieldPath: NewFieldPath(segments...)}, nil
 }
 
-func (s *orderByScanner) list() ([]OrderBy, error) {
+func (s *scanner) list() ([]OrderBy, error) {
 	var result []OrderBy
 	for {
 		s.spaces()
@@ -285,7 +285,7 @@ func (s *orderByScanner) list() ([]OrderBy, error) {
 	return result, nil
 }
 
-func (s *orderByScanner) unexpected() error {
+func (s *scanner) unexpected() error {
 	if s.eof() {
 		return fmt.Errorf("unexpected end of input at offset %d", s.pos)
 	}
@@ -293,11 +293,11 @@ func (s *orderByScanner) unexpected() error {
 	return fmt.Errorf("unexpected %q at offset %d", r, s.pos)
 }
 
-// OrderByString returns the AIP-132 representation of an order.
+// String returns the AIP-132 representation of an order.
 //
 // It is what the cursor binding is taken over, so an order that resolves the
 // same way fingerprints the same way.
-func OrderByString(order []OrderBy) string {
+func String(order []OrderBy) string {
 	if len(order) == 0 {
 		return ""
 	}

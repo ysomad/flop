@@ -3,7 +3,7 @@ package flop
 import (
 	"slices"
 
-	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/orderby"
 )
 
 // ParseOrder parses an AIP-132 order_by clause and validates it against the
@@ -12,8 +12,8 @@ import (
 // A schema that declares a unique field has it appended when the clause does
 // not already name it, so the order is total. Cursor pagination needs that to
 // page without repeating or dropping rows.
-func (s *Schema) ParseOrder(text string) ([]aip132.OrderBy, error) {
-	order, err := aip132.ParseOrderBy(text)
+func (s *Schema) ParseOrder(text string) ([]orderby.OrderBy, error) {
+	order, err := orderby.Parse(text)
 	if err != nil {
 		return nil, errorf(ErrInvalidOrder, "%v", err)
 	}
@@ -24,7 +24,7 @@ func (s *Schema) ParseOrder(text string) ([]aip132.OrderBy, error) {
 }
 
 // ValidateOrder reports whether every term names a distinct sortable field.
-func (s *Schema) ValidateOrder(order []aip132.OrderBy) error {
+func (s *Schema) ValidateOrder(order []orderby.OrderBy) error {
 	seen := make(map[string]struct{}, len(order))
 	for _, term := range order {
 		path := term.FieldPath.String()
@@ -47,24 +47,24 @@ func (s *Schema) ValidateOrder(order []aip132.OrderBy) error {
 // order first, so that the tie-breaker ends up last:
 //
 //	order := schema.TotalOrder(flop.MergeOrder(defaultOrder, requested))
-func (s *Schema) TotalOrder(order []aip132.OrderBy) []aip132.OrderBy {
+func (s *Schema) TotalOrder(order []orderby.OrderBy) []orderby.OrderBy {
 	if s.uniqueKey == nil {
 		return order
 	}
 	unique := s.uniqueKey.path
-	if slices.ContainsFunc(order, func(term aip132.OrderBy) bool {
+	if slices.ContainsFunc(order, func(term orderby.OrderBy) bool {
 		return term.FieldPath.Equals(unique)
 	}) {
 		return order
 	}
-	return append(order, aip132.OrderBy{FieldPath: unique})
+	return append(order, orderby.OrderBy{FieldPath: unique})
 }
 
 // MergeOrder combines a requested order with a schema's default. Terms in order
 // take precedence, and the terms of def it does not name follow in the order def
 // gives them.
-func MergeOrder(def, order []aip132.OrderBy) []aip132.OrderBy {
-	merged := make([]aip132.OrderBy, 0, len(order)+len(def))
+func MergeOrder(def, order []orderby.OrderBy) []orderby.OrderBy {
+	merged := make([]orderby.OrderBy, 0, len(order)+len(def))
 	seen := make(map[string]struct{}, len(order))
 	for _, term := range order {
 		merged = append(merged, term)
