@@ -1,18 +1,18 @@
-package aip132_test
+package orderby_test
 
 import (
 	"testing"
 
-	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/internal/assert"
+	"github.com/ysomad/flop/orderby"
 )
 
-func TestParseOrderBy(t *testing.T) {
+func TestParse(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
-		want    []aip132.OrderBy
+		want    []orderby.OrderBy
 		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", input: "", want: nil, wantErr: assert.NoError},
@@ -20,56 +20,56 @@ func TestParseOrderBy(t *testing.T) {
 		{
 			name:    "single field",
 			input:   "create_time",
-			want:    []aip132.OrderBy{{FieldPath: aip132.NewFieldPath("create_time")}},
+			want:    []orderby.OrderBy{{FieldPath: orderby.NewFieldPath("create_time")}},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "descending and nested path",
 			input: "create_time desc, user.name",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time"), Descending: true},
-				{FieldPath: aip132.NewFieldPath("user", "name")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("create_time"), Descending: true},
+				{FieldPath: orderby.NewFieldPath("user", "name")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "quoted segment",
 			input: "metadata.`odd name`.value",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "odd name", "value")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("metadata", "odd name", "value")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "escaped backtick",
 			input: "metadata.`a``b`",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "a`b")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("metadata", "a`b")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "spaces around dot are insignificant",
 			input: "user . name",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("user", "name")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("user", "name")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "spaces at every junction",
 			input: " a .b, c. d desc ",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("a", "b")},
-				{FieldPath: aip132.NewFieldPath("c", "d"), Descending: true},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("a", "b")},
+				{FieldPath: orderby.NewFieldPath("c", "d"), Descending: true},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "spaces around dot with quoted segment",
 			input: "metadata . `odd name` . value",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "odd name", "value")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("metadata", "odd name", "value")},
 			},
 			wantErr: assert.NoError,
 		},
@@ -77,24 +77,24 @@ func TestParseOrderBy(t *testing.T) {
 			// A dot binds tighter than the desc suffix, so this is one field.
 			name:  "dot wins over desc suffix",
 			input: "create_time. desc",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time", "desc")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("create_time", "desc")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "empty quoted segment",
 			input: "``",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("")},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "field named desc in descending order",
 			input: "desc desc",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("desc"), Descending: true},
+			want: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("desc"), Descending: true},
 			},
 			wantErr: assert.NoError,
 		},
@@ -115,7 +115,7 @@ func TestParseOrderBy(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := aip132.ParseOrderBy(test.input)
+			got, err := orderby.Parse(test.input)
 			test.wantErr(t, err)
 			if err != nil {
 				return
@@ -140,19 +140,19 @@ func TestFieldPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			path := aip132.NewFieldPath(test.segments...)
+			path := orderby.NewFieldPath(test.segments...)
 			assert.Equal(t, test.want, path.String())
 			assert.Equal(t, test.segments, path.GetSegments())
-			assert.True(t, path.Equals(aip132.NewFieldPath(test.segments...)))
-			assert.False(t, path.Equals(aip132.NewFieldPath("other")))
+			assert.True(t, path.Equals(orderby.NewFieldPath(test.segments...)))
+			assert.False(t, path.Equals(orderby.NewFieldPath("other")))
 		})
 	}
 }
 
-func TestOrderByString(t *testing.T) {
+func TestString(t *testing.T) {
 	t.Parallel()
 	type args struct {
-		order []aip132.OrderBy
+		order []orderby.OrderBy
 	}
 	tests := []struct {
 		name string
@@ -160,54 +160,54 @@ func TestOrderByString(t *testing.T) {
 		want string
 	}{
 		{name: "nil order", args: args{order: nil}, want: ""},
-		{name: "empty order", args: args{order: []aip132.OrderBy{}}, want: ""},
+		{name: "empty order", args: args{order: []orderby.OrderBy{}}, want: ""},
 		{
 			name: "single ascending",
-			args: args{order: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time")},
+			args: args{order: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("create_time")},
 			}},
 			want: "create_time",
 		},
 		{
 			name: "single descending",
-			args: args{order: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time"), Descending: true},
+			args: args{order: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("create_time"), Descending: true},
 			}},
 			want: "create_time desc",
 		},
 		{
 			name: "multiple fields mixed direction",
-			args: args{order: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time"), Descending: true},
-				{FieldPath: aip132.NewFieldPath("user", "name")},
-				{FieldPath: aip132.NewFieldPath("id"), Descending: true},
+			args: args{order: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("create_time"), Descending: true},
+				{FieldPath: orderby.NewFieldPath("user", "name")},
+				{FieldPath: orderby.NewFieldPath("id"), Descending: true},
 			}},
 			want: "create_time desc, user.name, id desc",
 		},
 		{
 			name: "quoted segment",
-			args: args{order: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "odd name", "value")},
+			args: args{order: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("metadata", "odd name", "value")},
 			}},
 			want: "metadata.`odd name`.value",
 		},
 		{
 			name: "escaped backtick",
-			args: args{order: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "a`b"), Descending: true},
+			args: args{order: []orderby.OrderBy{
+				{FieldPath: orderby.NewFieldPath("metadata", "a`b"), Descending: true},
 			}},
 			want: "metadata.`a``b` desc",
 		},
 		{
 			name: "zero field path",
-			args: args{order: []aip132.OrderBy{{}}},
+			args: args{order: []orderby.OrderBy{{}}},
 			want: "",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, aip132.OrderByString(tt.args.order))
+			assert.Equal(t, tt.want, orderby.String(tt.args.order))
 		})
 	}
 }

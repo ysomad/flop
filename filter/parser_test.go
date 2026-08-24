@@ -1,4 +1,4 @@
-package aip160
+package filter
 
 import (
 	"strconv"
@@ -8,7 +8,7 @@ import (
 	"github.com/ysomad/flop/internal/assert"
 )
 
-func TestParseFilter(t *testing.T) {
+func TestParse(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
@@ -78,7 +78,7 @@ func TestParseFilter(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ParseFilter(test.input)
+			got, err := Parse(test.input)
 			test.wantErr(t, err)
 			if err != nil {
 				return
@@ -105,7 +105,7 @@ func TestMember(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			f, err := ParseFilter(test.input)
+			f, err := Parse(test.input)
 			assert.NoError(t, err)
 			member := f.Expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction.Comparable.Member
 			assert.Equal(t, test.wantPath, member.Path())
@@ -115,7 +115,7 @@ func TestMember(t *testing.T) {
 }
 
 // render walks a parsed filter and returns a compact form of the tree: the
-// grouping the parser chose, made explicit. TestParseFilter asserts the exact
+// grouping the parser chose, made explicit. TestParse asserts the exact
 // node rendering; this asserts how the input was grouped.
 func render(f *Filter) string {
 	if f == nil || f.Expression == nil {
@@ -179,7 +179,7 @@ func group(parts []string, sep string) string {
 	return "(" + strings.Join(parts, sep) + ")"
 }
 
-func TestParseFilter_Grouping(t *testing.T) {
+func TestParse_Grouping(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -277,7 +277,7 @@ func TestParseFilter_Grouping(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ParseFilter(test.input)
+			got, err := Parse(test.input)
 			test.wantErr(t, err)
 			if err != nil {
 				return
@@ -287,29 +287,29 @@ func TestParseFilter_Grouping(t *testing.T) {
 	}
 }
 
-func TestParseFilter_Rendering(t *testing.T) {
+func TestParse_Rendering(t *testing.T) {
 	t.Parallel()
 
 	// The rendering a filter reports is what the cursor binding is taken over,
 	// so it comes from the tree: two spellings of one filter render alike.
-	spaced, err := ParseFilter("  a = 1  ")
+	spaced, err := Parse("  a = 1  ")
 	assert.NoError(t, err)
-	tight, err := ParseFilter("a=1")
+	tight, err := Parse("a=1")
 	assert.NoError(t, err)
 	assert.Equal(t, spaced.String(), tight.String())
 
 	// A blank filter carries no expression, and renders the same as a nil one.
-	empty, err := ParseFilter("   ")
+	empty, err := Parse("   ")
 	assert.NoError(t, err)
 	assert.Zero(t, empty.Expression)
 	assert.Equal(t, (*Filter)(nil).String(), empty.String())
 }
 
-// FuzzParseFilter checks that no input panics, that a filter that parses is
+// FuzzParse checks that no input panics, that a filter that parses is
 // never nil, and that the rendering a filter reports is stable across parses.
 // The last one is what a cursor binding rests on: the same filter replayed must
 // produce the same fingerprint.
-func FuzzParseFilter(f *testing.F) {
+func FuzzParse(f *testing.F) {
 	seeds := []string{
 		"",
 		"a = 1",
@@ -333,7 +333,7 @@ func FuzzParseFilter(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, input string) {
-		parsed, err := ParseFilter(input)
+		parsed, err := Parse(input)
 		if err != nil {
 			return
 		}
@@ -341,7 +341,7 @@ func FuzzParseFilter(f *testing.F) {
 			t.Fatalf("filter %q parsed to nothing without reporting an error", input)
 		}
 
-		reparsed, err := ParseFilter(input)
+		reparsed, err := Parse(input)
 		if err != nil {
 			t.Fatalf("filter %q parsed once but not twice: %v", input, err)
 		}

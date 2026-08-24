@@ -16,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
+	"github.com/ysomad/flop/filter"
 	"github.com/ysomad/flop/flopsq"
+	"github.com/ysomad/flop/orderby"
 )
 
 type payment struct {
@@ -70,8 +70,8 @@ var (
 
 // defaultOrder sorts newest first. A client order takes precedence over it,
 // and ParseOrder appends id so that every order is total.
-var defaultOrder = []aip132.OrderBy{
-	{FieldPath: aip132.NewFieldPath("captured_at"), Descending: true},
+var defaultOrder = []orderby.OrderBy{
+	{FieldPath: orderby.NewFieldPath("captured_at"), Descending: true},
 }
 
 const (
@@ -206,7 +206,7 @@ func handleCursorPayments(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, cursorResponse{
 		Items:      page.Items,
-		OrderBy:    aip132.OrderByString(order),
+		OrderBy:    orderby.String(order),
 		NextCursor: page.NextCursor,
 	})
 }
@@ -241,7 +241,7 @@ func handleOffsetPayments(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, offsetResponse{
 		Items:      page.Items,
-		OrderBy:    aip132.OrderByString(order),
+		OrderBy:    orderby.String(order),
 		Page:       page.Page,
 		TotalPages: page.TotalPages,
 		TotalItems: page.TotalItems,
@@ -256,8 +256,8 @@ func baseQuery() sq.SelectBuilder {
 
 func listCursorPayments(
 	ctx context.Context,
-	order []aip132.OrderBy,
-	f *aip160.Filter,
+	order []orderby.OrderBy,
+	f *filter.Filter,
 	after flop.CursorPosition,
 	size, skip int32,
 ) ([]payment, error) {
@@ -283,8 +283,8 @@ func listCursorPayments(
 
 func listOffsetPayments(
 	ctx context.Context,
-	order []aip132.OrderBy,
-	f *aip160.Filter,
+	order []orderby.OrderBy,
+	f *filter.Filter,
 	page, size int32,
 ) ([]payment, int64, error) {
 	b, err := flopsq.OffsetQuery(baseQuery(), paymentSchema, order, f, page, size)
@@ -350,13 +350,13 @@ func scanPayments(rows pgx.Rows) ([]payment, error) {
 
 // parseListRequest validates the order and filter a client sent against the
 // schema, rejecting a bad one before it reaches the database.
-func parseListRequest(req listRequest) ([]aip132.OrderBy, *aip160.Filter, error) {
+func parseListRequest(req listRequest) ([]orderby.OrderBy, *filter.Filter, error) {
 	f, err := paymentSchema.ParseFilter(req.Filter)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	requested, err := aip132.ParseOrderBy(req.OrderBy)
+	requested, err := orderby.Parse(req.OrderBy)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", flop.ErrInvalidOrder, err)
 	}

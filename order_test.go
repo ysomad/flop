@@ -3,8 +3,8 @@ package flop
 import (
 	"testing"
 
-	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/internal/assert"
+	"github.com/ysomad/flop/orderby"
 )
 
 func TestSchema_ParseOrder(t *testing.T) {
@@ -102,24 +102,24 @@ func TestSchema_ParseOrder(t *testing.T) {
 			if gotErr != nil {
 				return
 			}
-			assert.Equal(t, test.want, aip132.OrderByString(got))
+			assert.Equal(t, test.want, orderby.String(got))
 		})
 	}
 }
 
 func TestMergeOrder(t *testing.T) {
 	t.Parallel()
-	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	name := aip132.OrderBy{FieldPath: aip132.NewFieldPath("name")}
-	aDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a"), Descending: true}
-	b := aip132.OrderBy{FieldPath: aip132.NewFieldPath("b")}
-	cDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("c"), Descending: true}
+	createdAt := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at")}
+	createdAtDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at"), Descending: true}
+	id := orderby.OrderBy{FieldPath: orderby.NewFieldPath("id")}
+	name := orderby.OrderBy{FieldPath: orderby.NewFieldPath("name")}
+	aDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("a"), Descending: true}
+	b := orderby.OrderBy{FieldPath: orderby.NewFieldPath("b")}
+	cDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("c"), Descending: true}
 
 	type args struct {
-		def   []aip132.OrderBy
-		order []aip132.OrderBy
+		def   []orderby.OrderBy
+		order []orderby.OrderBy
 	}
 	tests := []struct {
 		name string
@@ -129,17 +129,17 @@ func TestMergeOrder(t *testing.T) {
 		{name: "both empty", args: args{}, want: ""},
 		{
 			name: "default only",
-			args: args{def: []aip132.OrderBy{createdAtDesc}},
+			args: args{def: []orderby.OrderBy{createdAtDesc}},
 			want: "created_at desc",
 		},
 		{
 			name: "order only",
-			args: args{order: []aip132.OrderBy{name}},
+			args: args{order: []orderby.OrderBy{name}},
 			want: "name",
 		},
 		{
 			name: "order comes first",
-			args: args{def: []aip132.OrderBy{createdAtDesc}, order: []aip132.OrderBy{name}},
+			args: args{def: []orderby.OrderBy{createdAtDesc}, order: []orderby.OrderBy{name}},
 			want: "name, created_at desc",
 		},
 		{
@@ -147,14 +147,14 @@ func TestMergeOrder(t *testing.T) {
 			// repeated by the default.
 			name: "order wins over the default direction",
 			args: args{
-				def:   []aip132.OrderBy{createdAtDesc, id},
-				order: []aip132.OrderBy{createdAt},
+				def:   []orderby.OrderBy{createdAtDesc, id},
+				order: []orderby.OrderBy{createdAt},
 			},
 			want: "created_at, id",
 		},
 		{
 			name: "default order is preserved",
-			args: args{def: []aip132.OrderBy{aDesc, b, cDesc}},
+			args: args{def: []orderby.OrderBy{aDesc, b, cDesc}},
 			want: "a desc, b, c desc",
 		},
 	}
@@ -162,21 +162,21 @@ func TestMergeOrder(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, test.want, aip132.OrderByString(MergeOrder(test.args.def, test.args.order)))
+			assert.Equal(t, test.want, orderby.String(MergeOrder(test.args.def, test.args.order)))
 		})
 	}
 }
 
 func TestSchema_TotalOrder(t *testing.T) {
 	t.Parallel()
-	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
-	displayName := aip132.OrderBy{FieldPath: aip132.NewFieldPath("display_name")}
-	a := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a")}
+	createdAt := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at")}
+	createdAtDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("created_at"), Descending: true}
+	idDesc := orderby.OrderBy{FieldPath: orderby.NewFieldPath("id"), Descending: true}
+	displayName := orderby.OrderBy{FieldPath: orderby.NewFieldPath("display_name")}
+	a := orderby.OrderBy{FieldPath: orderby.NewFieldPath("a")}
 
 	type args struct {
-		order []aip132.OrderBy
+		order []orderby.OrderBy
 	}
 	tests := []struct {
 		name   string
@@ -187,7 +187,7 @@ func TestSchema_TotalOrder(t *testing.T) {
 		{
 			name:   "appends the unique field",
 			schema: testSchema(t),
-			args:   args{order: []aip132.OrderBy{createdAtDesc}},
+			args:   args{order: []orderby.OrderBy{createdAtDesc}},
 			want:   "created_at desc, id",
 		},
 		{
@@ -195,13 +195,13 @@ func TestSchema_TotalOrder(t *testing.T) {
 			// end up last, behind whatever the default contributed.
 			name:   "appends behind a merged default",
 			schema: testSchema(t),
-			args:   args{order: MergeOrder([]aip132.OrderBy{createdAtDesc}, []aip132.OrderBy{displayName})},
+			args:   args{order: MergeOrder([]orderby.OrderBy{createdAtDesc}, []orderby.OrderBy{displayName})},
 			want:   "display_name, created_at desc, id",
 		},
 		{
 			name:   "order already names the unique field",
 			schema: testSchema(t),
-			args:   args{order: []aip132.OrderBy{idDesc, createdAt}},
+			args:   args{order: []orderby.OrderBy{idDesc, createdAt}},
 			want:   "id desc, created_at",
 		},
 		{
@@ -213,7 +213,7 @@ func TestSchema_TotalOrder(t *testing.T) {
 		{
 			name:   "no unique field declared",
 			schema: NewSchema(NewField("a").Ref("a").Int().Sortable()).MustBuild(),
-			args:   args{order: []aip132.OrderBy{a}},
+			args:   args{order: []orderby.OrderBy{a}},
 			want:   "a",
 		},
 	}
@@ -221,7 +221,7 @@ func TestSchema_TotalOrder(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, test.want, aip132.OrderByString(test.schema.TotalOrder(test.args.order)))
+			assert.Equal(t, test.want, orderby.String(test.schema.TotalOrder(test.args.order)))
 		})
 	}
 }
