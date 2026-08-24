@@ -253,6 +253,27 @@ func TestParseFilter_Grouping(t *testing.T) {
 		{name: "or before invalid operand", input: "a = 1 OR )", wantErr: assert.Error},
 		{name: "unexpected closing parenthesis", input: "a)", wantErr: assert.Error},
 		{name: "invalid traversal", input: "a. = 1", wantErr: assert.Error},
+
+		// Whitespace is significant between the factors of a sequence, around
+		// AND and OR, and after a negating '-', which abuts what it negates.
+		{name: "detached negation", input: "- 30", wantErr: assert.Error},
+		{name: "detached negation of a restriction", input: "- a = 1", wantErr: assert.Error},
+		{name: "detached negation of a composite", input: "- (a = 1)", wantErr: assert.Error},
+		{name: "whitespace around a traversal", input: "a . b", wantErr: assert.Error},
+		{name: "whitespace after a traversal", input: "a. b", wantErr: assert.Error},
+		{name: "whitespace before a traversal", input: "a .b", wantErr: assert.Error},
+		{name: "number split by whitespace", input: "value = 1 .5", wantErr: assert.Error},
+		{name: "factors without whitespace", input: `"a"b`, wantErr: assert.Error},
+		{name: "composites without whitespace", input: "(a)(b)", wantErr: assert.Error},
+		{name: "composite without whitespace", input: "a(b)", wantErr: assert.Error},
+		{name: "and without whitespace before it", input: "(a)AND b", wantErr: assert.Error},
+		{name: "or without whitespace before it", input: `"x"OR y`, wantErr: assert.Error},
+		{name: "negation without whitespace before it", input: "(a)NOT b", wantErr: assert.Error},
+
+		{name: "attached negation", input: "-30", want: "-30", wantErr: assert.NoError},
+		{name: "duration", input: "wait < 2h", want: "wait < 2h", wantErr: assert.NoError},
+		{name: "traversal", input: "a.b = 1", want: "a.b = 1", wantErr: assert.NoError},
+		{name: "and between composites", input: "(a) AND (b)", want: "(a AND b)", wantErr: assert.NoError},
 	}
 
 	for _, test := range tests {
@@ -305,6 +326,8 @@ func FuzzParseFilter(f *testing.F) {
 		"18446744073709551615",
 		"wait < 2h",
 		`'it\'s'`,
+		"- 30",
+		"(a)AND b",
 		strings.Repeat("(", 70) + "a" + strings.Repeat(")", 70),
 	}
 	for _, seed := range seeds {
