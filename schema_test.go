@@ -3,9 +3,8 @@ package flop
 import (
 	"testing"
 
-	"github.com/alecthomas/assert/v2"
-
 	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/internal/assert"
 )
 
 func TestSchemaBuilder_Build(t *testing.T) {
@@ -18,7 +17,7 @@ func TestSchemaBuilder_Build(t *testing.T) {
 		args       args
 		wantUnique string
 		wantRef    string
-		wantErr    errorFunc
+		wantErr    assert.ErrorFunc
 	}{
 		{
 			name: "every capability",
@@ -159,7 +158,7 @@ func TestSchema_FilterableField(t *testing.T) {
 		name    string
 		args    args
 		wantRef string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "filterable",
@@ -210,7 +209,7 @@ func TestSchema_SortableField(t *testing.T) {
 		name    string
 		args    args
 		wantRef string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "sortable",

@@ -6,17 +6,13 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/alecthomas/assert/v2"
 
 	"github.com/ysomad/flop"
 	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/flopsq"
+	"github.com/ysomad/flop/internal/assert"
 )
-
-// errorFunc lets a table row name the assertion its error must satisfy,
-// assert.NoError or assert.Error.
-type errorFunc = func(testing.TB, error, ...any)
 
 // user is the row the query tests address.
 type user struct {
@@ -53,7 +49,7 @@ func TestWhere(t *testing.T) {
 		args     args
 		want     string
 		wantArgs []any
-		wantErr  errorFunc
+		wantErr  assert.ErrorFunc
 	}{
 		{name: "empty filter", args: args{filter: ""}, want: "", wantErr: assert.NoError},
 		{
@@ -216,7 +212,7 @@ func TestOrderBy(t *testing.T) {
 		name    string
 		args    args
 		want    []string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", args: args{}, wantErr: assert.NoError},
 		{
@@ -277,7 +273,7 @@ func TestSeek(t *testing.T) {
 		args     args
 		want     string
 		wantArgs []any
-		wantErr  errorFunc
+		wantErr  assert.ErrorFunc
 	}{
 		{
 			name: "single unique field",
@@ -473,7 +469,7 @@ func TestOffsetQuery(t *testing.T) {
 		args     args
 		want     string
 		wantArgs []any
-		wantErr  errorFunc
+		wantErr  assert.ErrorFunc
 	}{
 		{
 			name: "page",
@@ -553,7 +549,7 @@ func TestCursorQuery(t *testing.T) {
 		args     args
 		want     string
 		wantArgs []any
-		wantErr  errorFunc
+		wantErr  assert.ErrorFunc
 	}{
 		{
 			name: "first page",

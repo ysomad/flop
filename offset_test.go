@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/alecthomas/assert/v2"
+	"github.com/ysomad/flop/internal/assert"
 )
 
 func TestOffset(t *testing.T) {
@@ -18,7 +18,7 @@ func TestOffset(t *testing.T) {
 		name    string
 		args    args
 		want    int64
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "zero page number selects the first page",
@@ -112,7 +112,7 @@ func TestNewOffsetPage(t *testing.T) {
 		name    string
 		args    args
 		want    OffsetPage[int32]
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name: "exact pages",

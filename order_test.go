@@ -3,9 +3,8 @@ package flop
 import (
 	"testing"
 
-	"github.com/alecthomas/assert/v2"
-
 	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/internal/assert"
 )
 
 func TestSchema_ParseOrder(t *testing.T) {
@@ -18,7 +17,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 		schema  *Schema
 		args    args
 		want    string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "single field",

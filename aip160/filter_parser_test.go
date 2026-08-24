@@ -5,10 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alecthomas/assert/v2"
+	"github.com/ysomad/flop/internal/assert"
 )
-
-type errorFunc func(testing.TB, error, ...any)
 
 func TestParseFilter(t *testing.T) {
 	t.Parallel()
@@ -16,7 +14,7 @@ func TestParseFilter(t *testing.T) {
 		name    string
 		input   string
 		want    string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", input: "", want: "filter{}", wantErr: assert.NoError},
 		{
@@ -188,7 +186,7 @@ func TestParseFilter_Grouping(t *testing.T) {
 		name    string
 		input   string
 		want    string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", input: " \n\t", want: "", wantErr: assert.NoError},
 		{name: "comparison", input: "price >= 12.5", want: "price >= 12.5", wantErr: assert.NoError},

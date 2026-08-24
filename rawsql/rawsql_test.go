@@ -4,16 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alecthomas/assert/v2"
-
 	"github.com/ysomad/flop"
 	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop/internal/assert"
 	"github.com/ysomad/flop/rawsql"
 )
-
-// errorFunc lets a table row name the assertion its error must satisfy,
-// assert.NoError or assert.Error.
-type errorFunc = func(testing.TB, error, ...any)
 
 var schema = flop.NewSchema(
 	flop.NewField("id").Ref("u.id").Int().Unique(),
@@ -38,7 +33,7 @@ func TestWhere(t *testing.T) {
 		args     args
 		want     string
 		wantArgs map[string]any
-		wantErr  errorFunc
+		wantErr  assert.ErrorFunc
 	}{
 		{
 			name:     "empty filter",
@@ -207,7 +202,7 @@ func TestOrderBy(t *testing.T) {
 		name    string
 		args    args
 		want    string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", args: args{}, want: "", wantErr: assert.NoError},
 		{
@@ -272,7 +267,7 @@ func TestSeek(t *testing.T) {
 		args     args
 		want     string
 		wantArgs map[string]any
-		wantErr  errorFunc
+		wantErr  assert.ErrorFunc
 	}{
 		{
 			name: "single unique field",

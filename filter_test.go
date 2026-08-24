@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alecthomas/assert/v2"
+	"github.com/ysomad/flop/internal/assert"
 )
 
 // renderExpr writes a compiled filter as a compact infix string, so a table row
@@ -57,7 +57,7 @@ func TestSchema_ParseFilter(t *testing.T) {
 		name    string
 		args    args
 		want    string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", args: args{text: ""}, want: "", wantErr: assert.NoError},
 		{name: "blank", args: args{text: "  "}, want: "", wantErr: assert.NoError},
@@ -371,7 +371,7 @@ func TestSchema_Compile_implicitFields(t *testing.T) {
 		schema  *Schema
 		args    args
 		want    string
-		wantErr errorFunc
+		wantErr assert.ErrorFunc
 	}{
 		{
 			name: "every implicit field is searched",
