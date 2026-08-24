@@ -69,9 +69,9 @@ type Not struct{ Expr Expr }
 
 // Cmp compares a field against a value.
 //
-// Value is a string, int64, float64, bool or time.Time matching the field's
-// type, or nil for a null comparison. It is never user text: the schema has
-// already coerced it.
+// Value is a string, int64, float64, bool, time.Time or time.Duration matching
+// the field's type, or nil for a null comparison. It is never user text: the
+// schema has already coerced it.
 type Cmp struct {
 	Field *Field
 	Op    Op
@@ -90,6 +90,9 @@ var comparators = map[Type]map[string]Op{
 	TypeInt:    {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
 	TypeFloat:  {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
 	TypeTime:   {"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe},
+	TypeDuration: {
+		"=": OpEq, "!=": OpNe, "<": OpLt, "<=": OpLe, ">": OpGt, ">=": OpGe,
+	},
 }
 
 var likeReplacer = strings.NewReplacer(
@@ -340,6 +343,12 @@ func coerce(field *Field, arg *aip160.Member) (any, error) {
 		value, err := time.Parse(time.RFC3339, text)
 		if err != nil {
 			return nil, invalid("an RFC 3339 timestamp")
+		}
+		return value, nil
+	case TypeDuration:
+		value, err := time.ParseDuration(text)
+		if err != nil {
+			return nil, invalid("a Go duration")
 		}
 		return value, nil
 	}

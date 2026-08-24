@@ -178,6 +178,56 @@ func TestSchema_ParseFilter(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
+			name:    "duration",
+			args:    args{text: "latency < 250ms"},
+			want:    "u.latency < 250ms",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "quoted fractional duration",
+			args:    args{text: `latency = "1.5s"`},
+			want:    "u.latency = 1.5s",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "compound duration",
+			args:    args{text: "latency >= 2h30m"},
+			want:    "u.latency >= 2h30m0s",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "zero duration",
+			args:    args{text: "latency = 0s"},
+			want:    "u.latency = 0s",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "negative duration",
+			args:    args{text: "latency > -1.5s"},
+			want:    "u.latency > -1.5s",
+			wantErr: assert.NoError,
+		},
+		{
+			name: "all duration comparators",
+			args: args{text: "latency = 1s AND latency != 2s AND latency < 3s" +
+				" AND latency <= 4s AND latency > 5s AND latency >= 6s"},
+			want: "(u.latency = 1s AND u.latency != 2s AND u.latency < 3s" +
+				" AND u.latency <= 4s AND u.latency > 5s AND u.latency >= 6s)",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "duration null",
+			args:    args{text: "latency = null"},
+			want:    "u.latency = null",
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "duration not null",
+			args:    args{text: "latency != null"},
+			want:    "u.latency != null",
+			wantErr: assert.NoError,
+		},
+		{
 			name:    "null",
 			args:    args{text: "created_at = null"},
 			want:    "u.created_at = null",
@@ -259,6 +309,16 @@ func TestSchema_ParseFilter(t *testing.T) {
 		{name: "bool is case sensitive", args: args{text: "active = TRUE"}, wantErr: assert.Error},
 		{name: "bool takes no quoted literal", args: args{text: `active = "true"`}, wantErr: assert.Error},
 		{name: "time is rfc 3339", args: args{text: `created_at > "yesterday"`}, wantErr: assert.Error},
+		{name: "duration needs a unit", args: args{text: "latency = 250"}, wantErr: assert.Error},
+		{name: "duration rejects text", args: args{text: "latency = later"}, wantErr: assert.Error},
+		{name: "duration has no day unit", args: args{text: "latency = 1d"}, wantErr: assert.Error},
+		{
+			name:    "duration overflow",
+			args:    args{text: "latency = 999999999999999999999999h"},
+			wantErr: assert.Error,
+		},
+		{name: "has on a duration", args: args{text: "latency:1s"}, wantErr: assert.Error},
+		{name: "duration null is not ordered", args: args{text: "latency > null"}, wantErr: assert.Error},
 		{name: "null is not ordered", args: args{text: "created_at > null"}, wantErr: assert.Error},
 		{name: "composite argument", args: args{text: "age = (1 OR 2)"}, wantErr: assert.Error},
 	}
@@ -287,6 +347,7 @@ func filterSchema(t *testing.T) *Schema {
 		NewField("id").Column("u.id").Int().Unique(),
 		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
 		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+		NewField("latency").Column("u.latency").Duration().Filterable().Sortable(),
 		NewField("active").Column("u.active").Bool().Filterable(),
 		NewField("rating").Column("u.rating").Float().Filterable(),
 		NewField("age").Column("u.age").Int().Filterable(),
@@ -378,7 +439,7 @@ func TestOp_String(t *testing.T) {
 func FuzzCompile(f *testing.F) {
 	seeds := []string{
 		"", "  ", "bob", `display_name = "bob"`, `display_name:"bo*"`,
-		"age > -30", "rating >= 4.5", "active = true", "created_at = null",
+		"age > -30", "rating >= 4.5", "active = true", "created_at = null", "latency < 250ms",
 		"age = 1 OR age = 2 AND active = true",
 		"NOT (active = true OR age = 30)",
 		`metadata.tags = "blue"`,
@@ -393,6 +454,7 @@ func FuzzCompile(f *testing.F) {
 		NewField("id").Column("u.id").Int().Unique(),
 		NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
 		NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+		NewField("latency").Column("u.latency").Duration().Filterable().Sortable(),
 		NewField("active").Column("u.active").Bool().Filterable(),
 		NewField("rating").Column("u.rating").Float().Filterable(),
 		NewField("age").Column("u.age").Int().Filterable(),

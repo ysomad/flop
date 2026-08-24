@@ -19,6 +19,7 @@ var schema = flop.NewSchema(
 	flop.NewField("id").Column("u.id").Int().Unique(),
 	flop.NewField("display_name").Column("u.name").String().Filterable().Sortable().Implicit(),
 	flop.NewField("created_at").Column("u.created_at").Time().Filterable().Sortable(),
+	flop.NewField("latency").Column("u.latency").Duration().Filterable().Sortable(),
 	flop.NewField("active").Column("u.active").Bool().Filterable(),
 	flop.NewField("rating").Column("u.rating").Float().Filterable().Sortable(),
 	flop.NewField("age").Column("u.age").Int().Filterable(),
@@ -86,6 +87,13 @@ func TestWhere(t *testing.T) {
 			args:     args{filter: `created_at > "2026-08-15T09:00:00Z"`},
 			want:     "(u.created_at > @created_at_1)",
 			wantArgs: map[string]any{"created_at_1": createdAt},
+			wantErr:  assert.NoError,
+		},
+		{
+			name:     "duration binds as a duration",
+			args:     args{filter: "latency < 250ms"},
+			want:     "(u.latency < @latency_1)",
+			wantArgs: map[string]any{"latency_1": 250 * time.Millisecond},
 			wantErr:  assert.NoError,
 		},
 		{

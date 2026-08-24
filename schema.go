@@ -17,6 +17,7 @@ const (
 	TypeFloat
 	TypeBool
 	TypeTime
+	TypeDuration
 )
 
 func (t Type) String() string {
@@ -31,6 +32,8 @@ func (t Type) String() string {
 		return "bool"
 	case TypeTime:
 		return "time"
+	case TypeDuration:
+		return "duration"
 	}
 	return fmt.Sprintf("Type(%d)", int(t))
 }
@@ -131,6 +134,9 @@ func (b *FieldBuilder) Bool() *FieldBuilder { return b.withType(TypeBool) }
 
 // Time types the field as an RFC 3339 timestamp.
 func (b *FieldBuilder) Time() *FieldBuilder { return b.withType(TypeTime) }
+
+// Duration types the field as a Go duration, such as 250ms or 2h30m.
+func (b *FieldBuilder) Duration() *FieldBuilder { return b.withType(TypeDuration) }
 
 func (b *FieldBuilder) withType(t Type) *FieldBuilder {
 	b.field.typ = t

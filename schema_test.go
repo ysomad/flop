@@ -261,6 +261,11 @@ func TestField_accessors(t *testing.T) {
 			field: NewField("secret").Column("u.secret").Time(),
 			want:  Field{column: "u.secret", typ: TypeTime},
 		},
+		{
+			name:  "duration",
+			field: NewField("latency").Column("u.latency").Duration(),
+			want:  Field{column: "u.latency", typ: TypeDuration},
+		},
 	}
 
 	for _, test := range tests {
@@ -289,6 +294,7 @@ func TestType_String(t *testing.T) {
 		{name: "float", typ: TypeFloat, want: "float"},
 		{name: "bool", typ: TypeBool, want: "bool"},
 		{name: "time", typ: TypeTime, want: "time"},
+		{name: "duration", typ: TypeDuration, want: "duration"},
 		{name: "unset", typ: 0, want: "Type(0)"},
 	}
 

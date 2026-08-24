@@ -27,6 +27,7 @@ var payments = flop.NewSchema(
 	flop.NewField("id").String().Unique().Value(func(p payment) any { return p.ID }),
 	flop.NewField("amount").Int().Filterable().Sortable().
 	flop.NewField("captured_at").Time().Filterable().Sortable().
+	flop.NewField("processing_time").Duration().Filterable().Sortable().
 	flop.NewField("provider").String().Filterable().Implicit(),
 	flop.NewField("tenant_id").Column("t.id").String().Filterable(),
 ).MustBuild()
@@ -63,8 +64,11 @@ the argument coerces to that type.
 | type | operators |
 | --- | --- |
 | string | `=` `!=` `:` |
-| int, float, time | `=` `!=` `<` `<=` `>` `>=` |
+| int, float, time, duration | `=` `!=` `<` `<=` `>` `>=` |
 | bool | `=` `!=` |
+
+`time` values are RFC 3339 timestamps. `duration` values use Go duration
+syntax, such as `250ms`, `1.5s` or `2h30m`.
 
 A `*` in a string argument makes the restriction a pattern match whichever
 comparator was written: `id = "*pay_00*"` becomes `LIKE '%pay\_00%'`, and
@@ -151,6 +155,9 @@ individual pieces.
 by hand. Every fragment omits its keyword and is parenthesized, so it drops into
 a query without knowing what surrounds it. Use one `Builder` per query, so that
 argument names stay unique across its fragments.
+
+Duration arguments are bound as `time.Duration`. Whether that maps directly to
+a native SQL interval depends on the driver and the column's storage type.
 
 ```go
 b := rawsql.NewBuilder()
