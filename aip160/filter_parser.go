@@ -33,9 +33,6 @@ package aip160
 // member: (TEXT | STRING) {DOT (TEXT | STRING)};
 // composite: LPAREN expression RPAREN;
 // arg: comparable | composite;
-//
-// TODO(mwarton): Redo whitespace handling.  There are still some cases (like "- 30")
-// 				  which are accepted as valid instead of being rejected.
 import (
 	"fmt"
 	"regexp"
@@ -69,6 +66,8 @@ var negativeNumberRE = regexp.MustCompile(`^-[0-9][^\s\.,<>=!:\(\)]*`)
 type token struct {
 	kind  string
 	value string
+	// space reports whether whitespace preceded the token.
+	space bool
 }
 
 type filterLexer struct {
@@ -97,8 +96,20 @@ func (l *filterLexer) Next() (*token, error) {
 		l.next = nil
 		return next, nil
 	}
-	l.next = nil
-	l.input = strings.TrimLeft(l.input, " \t\r\n")
+	trimmed := strings.TrimLeft(l.input, " \t\r\n")
+	space := len(trimmed) != len(l.input)
+	l.input = trimmed
+	t, err := l.lex()
+	if err != nil {
+		return nil, err
+	}
+	t.space = space
+	return t, nil
+}
+
+// lex reads the next token from the head of the input, which the caller has
+// already stripped of leading whitespace.
+func (l *filterLexer) lex() (*token, error) {
 	if l.input == "" {
 		return &token{kind: kindEnd}, nil
 	}
@@ -542,6 +553,41 @@ func (p *parser) expect(kind string) error {
 	return err
 }
 
+// expectSpaceBefore fails if the next token is of kind but no whitespace
+// precedes it. A token of another kind is left for the caller to handle.
+func (p *parser) expectSpaceBefore(kind string) error {
+	t, err := p.lexer.Peek()
+	if err != nil {
+		return err
+	}
+	if t.kind == kind && !t.space {
+		return fmt.Errorf("expected whitespace before %s(%q)", t.kind, t.value)
+	}
+	return nil
+}
+
+// rejectSpaceBefore fails if the next token is of kind and whitespace precedes
+// it. A token of another kind is left for the caller to handle.
+func (p *parser) rejectSpaceBefore(kind string) error {
+	t, err := p.lexer.Peek()
+	if err != nil {
+		return err
+	}
+	if t.kind == kind && t.space {
+		return fmt.Errorf("unexpected whitespace before %s(%q)", t.kind, t.value)
+	}
+	return nil
+}
+
+// startsFactor reports whether a token of kind can begin a factor.
+func startsFactor(kind string) bool {
+	switch kind {
+	case kindText, kindString, kindNegate, kindLParen:
+		return true
+	}
+	return false
+}
+
 func (p *parser) accept(kind string) (*token, error) {
 	t, err := p.lexer.Peek()
 	if err != nil {
@@ -579,6 +625,9 @@ func (p *parser) expression() (*Expression, error) {
 	e := &Expression{}
 	e.Sequences = append(e.Sequences, s)
 	for {
+		if err := p.expectSpaceBefore(kindAnd); err != nil {
+			return nil, err
+		}
 		and, err := p.accept(kindAnd)
 		if err != nil {
 			return nil, err
@@ -601,6 +650,15 @@ func (p *parser) expression() (*Expression, error) {
 func (p *parser) sequence() (*Sequence, error) {
 	s := &Sequence{}
 	for {
+		if len(s.Factors) > 0 {
+			t, err := p.lexer.Peek()
+			if err != nil {
+				return nil, err
+			}
+			if startsFactor(t.kind) && !t.space {
+				return nil, fmt.Errorf("expected whitespace before %s(%q)", t.kind, t.value)
+			}
+		}
 		f, err := p.factor()
 		if err != nil {
 			return nil, err
@@ -627,6 +685,9 @@ func (p *parser) factor() (*Factor, error) {
 	f := &Factor{}
 	f.Terms = append(f.Terms, t)
 	for {
+		if err := p.expectSpaceBefore(kindOr); err != nil {
+			return nil, err
+		}
 		or, err := p.accept(kindOr)
 		if err != nil {
 			return nil, err
@@ -650,6 +711,17 @@ func (p *parser) term() (*Term, error) {
 	n, err := p.accept(kindNegate)
 	if err != nil {
 		return nil, err
+	}
+	// A '-' negates what it abuts, so "- 30" is not a term. NOT is the other
+	// way around, and the lexer already required the whitespace after it.
+	if n != nil && n.value == "-" {
+		t, err := p.lexer.Peek()
+		if err != nil {
+			return nil, err
+		}
+		if t.space {
+			return nil, fmt.Errorf("unexpected whitespace after %q", n.value)
+		}
 	}
 	s, err := p.simple()
 	if err != nil {
@@ -729,12 +801,22 @@ func (p *parser) member() (*Member, error) {
 
 	m := &Member{Value: v}
 	for {
+		if err := p.rejectSpaceBefore(kindDot); err != nil {
+			return nil, err
+		}
 		dot, err := p.accept(kindDot)
 		if err != nil {
 			return nil, err
 		}
 		if dot == nil {
 			break
+		}
+		t, err := p.lexer.Peek()
+		if err != nil {
+			return nil, err
+		}
+		if t.space {
+			return nil, fmt.Errorf("unexpected whitespace after %q", dot.value)
 		}
 
 		v, err := p.value()
