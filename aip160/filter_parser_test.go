@@ -20,13 +20,13 @@ func TestParseFilter(t *testing.T) {
 		{
 			name:    "restriction",
 			input:   "a = 1",
-			want:    `filter{expression{sequence{factor{term{simple{restriction{comparable{member{value{"a"}}},"=",arg{comparable{member{value{"1"}}}}}}}}}}}`,
+			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},"=",arg{member{value{"1"}}}}}}}}}}`,
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "global restriction",
 			input:   "chair",
-			want:    `filter{expression{sequence{factor{term{simple{restriction{comparable{member{value{"chair"}}}}}}}}}}`,
+			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"chair"}}}}}}}}}`,
 			wantErr: assert.NoError,
 		},
 		// The two rows below cover the modifications this copy makes; see the
@@ -34,19 +34,19 @@ func TestParseFilter(t *testing.T) {
 		{
 			name:    "single rune single quoted string",
 			input:   "a = 'x'",
-			want:    `filter{expression{sequence{factor{term{simple{restriction{comparable{member{value{"a"}}},"=",arg{comparable{member{value{quoted,"x"}}}}}}}}}}}`,
+			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},"=",arg{member{value{quoted,"x"}}}}}}}}}}`,
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "negative number is not a negation",
 			input:   "a > -30",
-			want:    `filter{expression{sequence{factor{term{simple{restriction{comparable{member{value{"a"}}},">",arg{comparable{member{value{"-30"}}}}}}}}}}}`,
+			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},">",arg{member{value{"-30"}}}}}}}}}}`,
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "negation of a restriction",
 			input:   "-a = 1",
-			want:    `filter{expression{sequence{factor{term{-simple{restriction{comparable{member{value{"a"}}},"=",arg{comparable{member{value{"1"}}}}}}}}}}}`,
+			want:    `filter{expression{sequence{factor{term{-simple{restriction{member{value{"a"}},"=",arg{member{value{"1"}}}}}}}}}}`,
 			wantErr: assert.NoError,
 		},
 
@@ -70,7 +70,7 @@ func TestParseFilter(t *testing.T) {
 			// reads as text rather than failing.
 			name:    "unterminated quote is text",
 			input:   `a = '`,
-			want:    `filter{expression{sequence{factor{term{simple{restriction{comparable{member{value{"a"}}},"=",arg{comparable{member{value{"'"}}}}}}}}}}}`,
+			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},"=",arg{member{value{"'"}}}}}}}}}}`,
 			wantErr: assert.NoError,
 		},
 	}
@@ -78,16 +78,8 @@ func TestParseFilter(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			p := NewParser()
-			got, err := p.Parse(test.input)
+			got, err := ParseFilter(test.input)
 			test.wantErr(t, err)
-
-			// A Parser keeps no state between filters, so the same one reads
-			// the same input the same way twice.
-			again, againErr := p.Parse(test.input)
-			test.wantErr(t, againErr)
-			assert.Equal(t, got, again)
-
 			if err != nil {
 				return
 			}
@@ -115,7 +107,7 @@ func TestMember(t *testing.T) {
 			t.Parallel()
 			f, err := ParseFilter(test.input)
 			assert.NoError(t, err)
-			member := f.Expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction.Comparable.Member
+			member := f.Expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction.Member
 			assert.Equal(t, test.wantPath, member.Path())
 			assert.Equal(t, test.wantQuoted, member.Quoted())
 		})
@@ -148,7 +140,7 @@ func renderExpression(e *Expression) string {
 	return group(parts, " AND ")
 }
 
-func renderTerm(t *Term) string {
+func renderTerm(t Term) string {
 	var b strings.Builder
 	if t.Negated {
 		b.WriteString("-")
@@ -158,13 +150,13 @@ func renderTerm(t *Term) string {
 		b.WriteString(renderExpression(t.Simple.Composite))
 	case t.Simple.Restriction != nil:
 		r := t.Simple.Restriction
-		b.WriteString(renderMember(r.Comparable.Member))
+		b.WriteString(renderMember(r.Member))
 		if r.Comparator != "" {
 			b.WriteString(" " + r.Comparator + " ")
 			if r.Arg.Composite != nil {
 				b.WriteString(renderExpression(r.Arg.Composite))
 			} else {
-				b.WriteString(renderMember(r.Arg.Comparable.Member))
+				b.WriteString(renderMember(r.Arg.Member))
 			}
 		}
 	}
@@ -173,7 +165,7 @@ func renderTerm(t *Term) string {
 
 // renderMember quotes a member that was quoted in the source, so a row can tell
 // the bare identifier active apart from the string "active".
-func renderMember(m *Member) string {
+func renderMember(m Member) string {
 	if m.Quoted() {
 		return strconv.Quote(m.Path())
 	}

@@ -70,36 +70,34 @@ type token struct {
 	space bool
 }
 
-type lexer struct {
-	input string
-	next  *token
+// parser reads an AIP-160 filter directly from its input. It is the whole
+// state of one parse: the unread input, and the token peeked past it.
+type parser struct {
+	input  string
+	peeked *token
 }
 
-func newLexer(input string) *lexer {
-	return &lexer{input: input}
-}
-
-func (l *lexer) Peek() (*token, error) {
-	if l.next == nil {
+func (p *parser) peek() (*token, error) {
+	if p.peeked == nil {
 		var err error
-		l.next, err = l.Next()
+		p.peeked, err = p.next()
 		if err != nil {
 			return nil, err
 		}
 	}
-	return l.next, nil
+	return p.peeked, nil
 }
 
-func (l *lexer) Next() (*token, error) {
-	if l.next != nil {
-		next := l.next
-		l.next = nil
+func (p *parser) next() (*token, error) {
+	if p.peeked != nil {
+		next := p.peeked
+		p.peeked = nil
 		return next, nil
 	}
-	trimmed := strings.TrimLeft(l.input, " \t\r\n")
-	space := len(trimmed) != len(l.input)
-	l.input = trimmed
-	t, err := l.lex()
+	trimmed := strings.TrimLeft(p.input, " \t\r\n")
+	space := len(trimmed) != len(p.input)
+	p.input = trimmed
+	t, err := p.lex()
 	if err != nil {
 		return nil, err
 	}
@@ -109,19 +107,19 @@ func (l *lexer) Next() (*token, error) {
 
 // lex reads the next token from the head of the input, which the caller has
 // already stripped of leading whitespace.
-func (l *lexer) lex() (*token, error) {
-	if l.input == "" {
+func (p *parser) lex() (*token, error) {
+	if p.input == "" {
 		return &token{kind: kindEnd}, nil
 	}
-	if value := negativeNumberRE.FindString(l.input); value != "" {
-		l.input = l.input[len(value):]
+	if value := negativeNumberRE.FindString(p.input); value != "" {
+		p.input = p.input[len(value):]
 		return &token{kind: kindText, value: value}, nil
 	}
-	matches := lexerRE.FindStringSubmatch(l.input)
+	matches := lexerRE.FindStringSubmatch(p.input)
 	if matches == nil {
-		return nil, fmt.Errorf("error: unable to lex token from %q", l.input)
+		return nil, fmt.Errorf("error: unable to lex token from %q", p.input)
 	}
-	l.input = l.input[len(matches[0]):]
+	p.input = p.input[len(matches[0]):]
 	if matches[1] != "" {
 		return &token{kind: kindComparator, value: matches[1]}, nil
 	}
@@ -195,7 +193,7 @@ func (v *Filter) String() string {
 // The expression `(a b) AND c AND d` is equivalent to the example.
 type Expression struct {
 	// Sequences are always joined by an AND operator
-	Sequences []*Sequence
+	Sequences []Sequence
 }
 
 func (v *Expression) String() string {
@@ -205,9 +203,7 @@ func (v *Expression) String() string {
 		if i > 0 {
 			s.WriteString(",")
 		}
-		if c != nil {
-			s.WriteString(c.String())
-		}
+		s.WriteString(c.String())
 	}
 	s.WriteString("}")
 	return s.String()
@@ -229,19 +225,17 @@ func (v *Expression) String() string {
 // example.
 type Sequence struct {
 	// Factors are always joined by an (implicit) AND operator
-	Factors []*Factor
+	Factors []Factor
 }
 
-func (v *Sequence) String() string {
+func (v Sequence) String() string {
 	var s strings.Builder
 	s.WriteString("sequence{")
 	for i, c := range v.Factors {
 		if i > 0 {
 			s.WriteString(",")
 		}
-		if c != nil {
-			s.WriteString(c.String())
-		}
+		s.WriteString(c.String())
 	}
 	s.WriteString("}")
 	return s.String()
@@ -254,19 +248,17 @@ func (v *Sequence) String() string {
 // Example: `a < 10 OR a >= 100`
 type Factor struct {
 	// Terms are always joined by an OR operator
-	Terms []*Term
+	Terms []Term
 }
 
-func (v *Factor) String() string {
+func (v Factor) String() string {
 	var s strings.Builder
 	s.WriteString("factor{")
 	for i, c := range v.Terms {
 		if i > 0 {
 			s.WriteString(",")
 		}
-		if c != nil {
-			s.WriteString(c.String())
-		}
+		s.WriteString(c.String())
 	}
 	s.WriteString("}")
 	return s.String()
@@ -286,18 +278,16 @@ func (v *Factor) String() string {
 // * negation        : `-30`
 type Term struct {
 	Negated bool
-	Simple  *Simple
+	Simple  Simple
 }
 
-func (v *Term) String() string {
+func (v Term) String() string {
 	var s strings.Builder
 	s.WriteString("term{")
 	if v.Negated {
 		s.WriteString("-")
 	}
-	if v.Simple != nil {
-		s.WriteString(v.Simple.String())
-	}
+	s.WriteString(v.Simple.String())
 	s.WriteString("}")
 	return s.String()
 }
@@ -313,7 +303,7 @@ type Simple struct {
 	Composite *Expression
 }
 
-func (v *Simple) String() string {
+func (v Simple) String() string {
 	var s strings.Builder
 	s.WriteString("simple{")
 	if v.Restriction != nil {
@@ -351,7 +341,7 @@ func (v *Simple) String() string {
 // the `comparable` value. The has operator is useful for validating the
 // structure and contents of complex values.
 type Restriction struct {
-	Comparable *Comparable
+	Member Member
 	// Comparators supported by list filters: <=, <. >=, >, !=, =, :
 	Comparator string
 	Arg        *Arg
@@ -360,9 +350,7 @@ type Restriction struct {
 func (v *Restriction) String() string {
 	var s strings.Builder
 	s.WriteString("restriction{")
-	if v.Comparable != nil {
-		s.WriteString(v.Comparable.String())
-	}
+	s.WriteString(v.Member.String())
 	if v.Comparator != "" {
 		s.WriteString(",")
 		s.WriteString(strconv.Quote(v.Comparator))
@@ -376,7 +364,7 @@ func (v *Restriction) String() string {
 }
 
 type Arg struct {
-	Comparable *Comparable
+	Member Member
 	// Composite is a parenthesized expression, commonly used to group
 	// terms or clarify operator precedence.
 	//
@@ -387,28 +375,9 @@ type Arg struct {
 func (v *Arg) String() string {
 	var s strings.Builder
 	s.WriteString("arg{")
-	if v.Comparable != nil {
-		s.WriteString(v.Comparable.String())
-	}
-	if v.Comparable != nil && v.Composite != nil {
-		s.WriteString(",")
-	}
 	if v.Composite != nil {
 		s.WriteString(v.Composite.String())
-	}
-	s.WriteString("}")
-	return s.String()
-}
-
-// Comparable may either be a member or function.  As functions are not currently supported, it is always a member.
-type Comparable struct {
-	Member *Member
-}
-
-func (v *Comparable) String() string {
-	var s strings.Builder
-	s.WriteString("comparable{")
-	if v.Member != nil {
+	} else {
 		s.WriteString(v.Member.String())
 	}
 	s.WriteString("}")
@@ -419,11 +388,11 @@ func (v *Comparable) String() string {
 //
 // Example: `expr.type_map.1.type`
 type Member struct {
-	Value  *Value
-	Fields []*Value
+	Value  Value
+	Fields []Value
 }
 
-func (v *Member) String() string {
+func (v Member) String() string {
 	var s strings.Builder
 	s.WriteString("member{")
 	s.WriteString(v.Value.String())
@@ -446,9 +415,7 @@ func (v *Member) String() string {
 // Input returns the input text used to produce the value, for used in errors.
 func (v Member) Input() string {
 	var s strings.Builder
-	if v.Value != nil {
-		s.WriteString(v.Value.Input())
-	}
+	s.WriteString(v.Value.Input())
 	for _, f := range v.Fields {
 		s.WriteString(".")
 		s.WriteString(f.Input())
@@ -462,10 +429,7 @@ func (v Member) Input() string {
 // an argument the lexer split on a dot, such as the float 1.5 or the duration
 // 1.5s. Input renders the same segments as filter source, re-quoting the
 // quoted ones, so it cannot serve either purpose.
-func (v *Member) Path() string {
-	if v.Value == nil {
-		return ""
-	}
+func (v Member) Path() string {
 	if len(v.Fields) == 0 {
 		return v.Value.Value
 	}
@@ -480,8 +444,8 @@ func (v *Member) Path() string {
 
 // Quoted reports whether any segment of the member was a quoted string. A
 // quoted argument is text and never a number, a bool, or the null literal.
-func (v *Member) Quoted() bool {
-	if v.Value != nil && v.Value.Quoted {
+func (v Member) Quoted() bool {
+	if v.Value.Quoted {
 		return true
 	}
 	for _, field := range v.Fields {
@@ -528,47 +492,28 @@ func (v Value) Input() string {
 	return v.Value
 }
 
-// ParseFilter parses an AIP-160 filter string into an AST. It is a [Parser]
-// used once, for a caller with a single filter to read.
+// ParseFilter parses an AIP-160 filter string into an AST.
 func ParseFilter(text string) (*Filter, error) {
-	return NewParser().Parse(text)
-}
-
-// Parser parses AIP-160 filter expressions. It carries the state of a single
-// parse, so one Parser may be reused across inputs but not across goroutines.
-type Parser struct {
-	lexer *lexer
-}
-
-// NewParser returns a parser ready to read its first filter. The zero Parser
-// is ready too.
-func NewParser() *Parser {
-	return &Parser{}
-}
-
-// Parse parses an AIP-160 filter string into an AST, discarding whatever the
-// previous call left behind.
-func (p *Parser) Parse(text string) (*Filter, error) {
-	p.lexer = newLexer(text)
+	p := parser{input: text}
 	return p.filter()
 }
 
-func (p *Parser) expect(kind string) error {
-	t, err := p.lexer.Peek()
+func (p *parser) expect(kind string) error {
+	t, err := p.peek()
 	if err != nil {
 		return err
 	}
 	if t.kind != kind {
 		return fmt.Errorf("expected %s but got %s(%q)", kind, t.kind, t.value)
 	}
-	_, err = p.lexer.Next()
+	_, err = p.next()
 	return err
 }
 
 // expectSpaceBefore fails if the next token is of kind but no whitespace
 // precedes it. A token of another kind is left for the caller to handle.
-func (p *Parser) expectSpaceBefore(kind string) error {
-	t, err := p.lexer.Peek()
+func (p *parser) expectSpaceBefore(kind string) error {
+	t, err := p.peek()
 	if err != nil {
 		return err
 	}
@@ -580,8 +525,8 @@ func (p *Parser) expectSpaceBefore(kind string) error {
 
 // rejectSpaceBefore fails if the next token is of kind and whitespace precedes
 // it. A token of another kind is left for the caller to handle.
-func (p *Parser) rejectSpaceBefore(kind string) error {
-	t, err := p.lexer.Peek()
+func (p *parser) rejectSpaceBefore(kind string) error {
+	t, err := p.peek()
 	if err != nil {
 		return err
 	}
@@ -600,18 +545,18 @@ func startsFactor(kind string) bool {
 	return false
 }
 
-func (p *Parser) accept(kind string) (*token, error) {
-	t, err := p.lexer.Peek()
+func (p *parser) accept(kind string) (*token, error) {
+	t, err := p.peek()
 	if err != nil {
 		return nil, err
 	}
 	if t.kind != kind {
 		return nil, nil
 	}
-	return p.lexer.Next()
+	return p.next()
 }
 
-func (p *Parser) filter() (*Filter, error) {
+func (p *parser) filter() (*Filter, error) {
 	t, err := p.accept(kindEnd)
 	if err != nil {
 		return nil, err
@@ -626,12 +571,12 @@ func (p *Parser) filter() (*Filter, error) {
 	return &Filter{Expression: e}, p.expect(kindEnd)
 }
 
-func (p *Parser) expression() (*Expression, error) {
-	s, err := p.sequence()
+func (p *parser) expression() (*Expression, error) {
+	s, ok, err := p.sequence()
 	if err != nil {
 		return nil, err
 	}
-	if s == nil {
+	if !ok {
 		return nil, nil
 	}
 	e := &Expression{}
@@ -647,11 +592,11 @@ func (p *Parser) expression() (*Expression, error) {
 		if and == nil {
 			break
 		}
-		s, err := p.sequence()
+		s, ok, err := p.sequence()
 		if err != nil {
 			return nil, err
 		}
-		if s == nil {
+		if !ok {
 			return nil, fmt.Errorf("expected sequence after AND")
 		}
 		e.Sequences = append(e.Sequences, s)
@@ -659,119 +604,119 @@ func (p *Parser) expression() (*Expression, error) {
 	return e, nil
 }
 
-func (p *Parser) sequence() (*Sequence, error) {
-	s := &Sequence{}
+func (p *parser) sequence() (Sequence, bool, error) {
+	var s Sequence
 	for {
 		if len(s.Factors) > 0 {
-			t, err := p.lexer.Peek()
+			t, err := p.peek()
 			if err != nil {
-				return nil, err
+				return Sequence{}, false, err
 			}
 			if startsFactor(t.kind) && !t.space {
-				return nil, fmt.Errorf("expected whitespace before %s(%q)", t.kind, t.value)
+				return Sequence{}, false, fmt.Errorf("expected whitespace before %s(%q)", t.kind, t.value)
 			}
 		}
-		f, err := p.factor()
+		f, ok, err := p.factor()
 		if err != nil {
-			return nil, err
+			return Sequence{}, false, err
 		}
-		if f == nil {
+		if !ok {
 			break
 		}
 		s.Factors = append(s.Factors, f)
 	}
 	if len(s.Factors) == 0 {
-		return nil, nil
+		return Sequence{}, false, nil
 	}
-	return s, nil
+	return s, true, nil
 }
 
-func (p *Parser) factor() (*Factor, error) {
-	t, err := p.term()
+func (p *parser) factor() (Factor, bool, error) {
+	t, ok, err := p.term()
 	if err != nil {
-		return nil, err
+		return Factor{}, false, err
 	}
-	if t == nil {
-		return nil, nil
+	if !ok {
+		return Factor{}, false, nil
 	}
-	f := &Factor{}
+	var f Factor
 	f.Terms = append(f.Terms, t)
 	for {
 		if err := p.expectSpaceBefore(kindOr); err != nil {
-			return nil, err
+			return Factor{}, false, err
 		}
 		or, err := p.accept(kindOr)
 		if err != nil {
-			return nil, err
+			return Factor{}, false, err
 		}
 		if or == nil {
 			break
 		}
-		t, err := p.term()
+		t, ok, err := p.term()
 		if err != nil {
-			return nil, err
+			return Factor{}, false, err
 		}
-		if t == nil {
-			return nil, fmt.Errorf("expected sequence after AND")
+		if !ok {
+			return Factor{}, false, fmt.Errorf("expected sequence after AND")
 		}
 		f.Terms = append(f.Terms, t)
 	}
-	return f, nil
+	return f, true, nil
 }
 
-func (p *Parser) term() (*Term, error) {
+func (p *parser) term() (Term, bool, error) {
 	n, err := p.accept(kindNegate)
 	if err != nil {
-		return nil, err
+		return Term{}, false, err
 	}
 	// A '-' negates what it abuts, so "- 30" is not a term. NOT is the other
 	// way around, and the lexer already required the whitespace after it.
 	if n != nil && n.value == "-" {
-		t, err := p.lexer.Peek()
+		t, err := p.peek()
 		if err != nil {
-			return nil, err
+			return Term{}, false, err
 		}
 		if t.space {
-			return nil, fmt.Errorf("unexpected whitespace after %q", n.value)
+			return Term{}, false, fmt.Errorf("unexpected whitespace after %q", n.value)
 		}
 	}
-	s, err := p.simple()
+	s, ok, err := p.simple()
 	if err != nil {
-		return nil, err
+		return Term{}, false, err
 	}
-	if s == nil {
+	if !ok {
 		if n != nil {
-			return nil, fmt.Errorf("expected simple term after negation %q", n.value)
+			return Term{}, false, fmt.Errorf("expected simple term after negation %q", n.value)
 		}
-		return nil, nil
+		return Term{}, false, nil
 	}
-	return &Term{Negated: n != nil, Simple: s}, nil
+	return Term{Negated: n != nil, Simple: s}, true, nil
 }
 
-func (p *Parser) simple() (*Simple, error) {
+func (p *parser) simple() (Simple, bool, error) {
 	r, err := p.restriction()
 	if err != nil {
-		return nil, err
+		return Simple{}, false, err
 	}
 	if r != nil {
-		return &Simple{Restriction: r}, nil
+		return Simple{Restriction: r}, true, nil
 	}
 	c, err := p.composite()
 	if err != nil {
-		return nil, err
+		return Simple{}, false, err
 	}
 	if c != nil {
-		return &Simple{Composite: c}, nil
+		return Simple{Composite: c}, true, nil
 	}
-	return nil, nil
+	return Simple{}, false, nil
 }
 
-func (p *Parser) restriction() (*Restriction, error) {
-	comparable, err := p.comparable()
+func (p *parser) restriction() (*Restriction, error) {
+	m, ok, err := p.member()
 	if err != nil {
 		return nil, err
 	}
-	if comparable == nil {
+	if !ok {
 		return nil, nil
 	}
 	comparator, err := p.accept(kindComparator)
@@ -779,7 +724,7 @@ func (p *Parser) restriction() (*Restriction, error) {
 		return nil, err
 	}
 	if comparator == nil {
-		return &Restriction{Comparable: comparable}, nil
+		return &Restriction{Member: m}, nil
 	}
 	arg, err := p.arg()
 	if err != nil {
@@ -788,88 +733,77 @@ func (p *Parser) restriction() (*Restriction, error) {
 	if arg == nil {
 		return nil, fmt.Errorf("expected arg after %s", comparator.value)
 	}
-	return &Restriction{Comparable: comparable, Comparator: comparator.value, Arg: arg}, nil
+	return &Restriction{Member: m, Comparator: comparator.value, Arg: arg}, nil
 }
 
-func (p *Parser) comparable() (*Comparable, error) {
-	m, err := p.member()
+func (p *parser) member() (Member, bool, error) {
+	v, ok, err := p.value()
 	if err != nil {
-		return nil, err
+		return Member{}, false, err
 	}
-	if m == nil {
-		return nil, nil
-	}
-	return &Comparable{Member: m}, nil
-}
-
-func (p *Parser) member() (*Member, error) {
-	v, err := p.value()
-	if err != nil {
-		return nil, err
-	}
-	if v == nil {
-		return nil, nil
+	if !ok {
+		return Member{}, false, nil
 	}
 
-	m := &Member{Value: v}
+	m := Member{Value: v}
 	for {
 		if err := p.rejectSpaceBefore(kindDot); err != nil {
-			return nil, err
+			return Member{}, false, err
 		}
 		dot, err := p.accept(kindDot)
 		if err != nil {
-			return nil, err
+			return Member{}, false, err
 		}
 		if dot == nil {
 			break
 		}
-		t, err := p.lexer.Peek()
+		t, err := p.peek()
 		if err != nil {
-			return nil, err
+			return Member{}, false, err
 		}
 		if t.space {
-			return nil, fmt.Errorf("unexpected whitespace after %q", dot.value)
+			return Member{}, false, fmt.Errorf("unexpected whitespace after %q", dot.value)
 		}
 
-		v, err := p.value()
+		v, ok, err := p.value()
 		if err != nil {
-			return nil, err
+			return Member{}, false, err
 		}
-		if v == nil {
-			return nil, fmt.Errorf("expected value after '.'")
+		if !ok {
+			return Member{}, false, fmt.Errorf("expected value after '.'")
 		}
 
 		m.Fields = append(m.Fields, v)
 	}
-	return m, nil
+	return m, true, nil
 }
 
-// value attempts to consume a Value from the input tokens.
-// If no value can be read, returns nil.
-func (p *Parser) value() (*Value, error) {
+// value attempts to consume a Value from the input tokens, and reports whether
+// it read one.
+func (p *parser) value() (Value, bool, error) {
 	v, err := p.accept(kindString)
 	if err != nil {
-		return nil, err
+		return Value{}, false, err
 	}
 	if v != nil {
 		v.value, err = strconv.Unquote(v.value)
 		if err != nil {
-			return nil, fmt.Errorf("error unquoting string: %w", err)
+			return Value{}, false, fmt.Errorf("error unquoting string: %w", err)
 		}
-		return &Value{Quoted: true, Value: v.value}, nil
+		return Value{Quoted: true, Value: v.value}, true, nil
 	}
 
 	v, err = p.accept(kindText)
 	if err != nil {
-		return nil, err
+		return Value{}, false, err
 	}
 	if v == nil {
-		return nil, nil
+		return Value{}, false, nil
 	}
-	return &Value{Value: v.value}, nil
+	return Value{Value: v.value}, true, nil
 }
 
-func (p *Parser) composite() (*Expression, error) {
+func (p *parser) composite() (*Expression, error) {
 	lparen, err := p.accept(kindLParen)
 	if err != nil {
 		return nil, err
@@ -887,13 +821,13 @@ func (p *Parser) composite() (*Expression, error) {
 	return e, p.expect(kindRParen)
 }
 
-func (p *Parser) arg() (*Arg, error) {
-	comparable, err := p.comparable()
+func (p *parser) arg() (*Arg, error) {
+	m, ok, err := p.member()
 	if err != nil {
 		return nil, err
 	}
-	if comparable != nil {
-		return &Arg{Comparable: comparable}, nil
+	if ok {
+		return &Arg{Member: m}, nil
 	}
 	composite, err := p.composite()
 	if err != nil {
