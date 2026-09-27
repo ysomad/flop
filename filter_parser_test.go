@@ -1,4 +1,4 @@
-package aip160
+package flop
 
 import (
 	"strconv"
@@ -190,10 +190,10 @@ func TestParseFilter(t *testing.T) {
 			if test.want != "" {
 				assert.Equal(t, test.want, got.String())
 			}
-			if test.wantGroup != "" || got.Expression == nil {
+			if test.wantGroup != "" || got.expression == nil {
 				assert.Equal(t, test.wantGroup, render(got))
 			}
-			if got.Expression == nil {
+			if got.expression == nil {
 				// A filter carrying no expression renders as a nil one does.
 				assert.Equal(t, (*Filter)(nil).String(), got.String())
 			}
@@ -205,13 +205,13 @@ func TestParseFilter(t *testing.T) {
 // grouping the parser chose, made explicit. TestParseFilter asserts the exact
 // node rendering; this asserts how the input was grouped.
 func render(f *Filter) string {
-	if f == nil || f.Expression == nil {
+	if f == nil || f.expression == nil {
 		return ""
 	}
-	return renderExpression(f.Expression)
+	return renderExpression(f.expression)
 }
 
-func renderExpression(e *Expression) string {
+func renderExpression(e *expression) string {
 	parts := make([]string, 0, len(e.Sequences))
 	for _, sequence := range e.Sequences {
 		factors := make([]string, 0, len(sequence.Factors))
@@ -227,7 +227,7 @@ func renderExpression(e *Expression) string {
 	return group(parts, " AND ")
 }
 
-func renderTerm(t Term) string {
+func renderTerm(t term) string {
 	var b strings.Builder
 	if t.Negated {
 		b.WriteString("-")
@@ -252,7 +252,7 @@ func renderTerm(t Term) string {
 
 // renderMember quotes a member that was quoted in the source, so a row can tell
 // the bare identifier active apart from the string "active".
-func renderMember(m Member) string {
+func renderMember(m member) string {
 	if m.Quoted() {
 		return strconv.Quote(m.Path())
 	}
@@ -266,7 +266,7 @@ func group(parts []string, sep string) string {
 	return "(" + strings.Join(parts, sep) + ")"
 }
 
-func TestMember_Path(t *testing.T) {
+func Test_member_Path(t *testing.T) {
 	t.Parallel()
 	const unicode = "Hello 世界 "
 	tests := []struct {
@@ -322,7 +322,7 @@ func TestMember_Path(t *testing.T) {
 	}
 }
 
-func TestMember_Quoted(t *testing.T) {
+func Test_member_Quoted(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name    string
@@ -349,11 +349,11 @@ func TestMember_Quoted(t *testing.T) {
 }
 
 // testMember parses one restriction and hands back the member a row addresses.
-func testMember(t *testing.T, input string, fromArg bool) Member {
+func testMember(t *testing.T, input string, fromArg bool) member {
 	t.Helper()
 	filter, err := ParseFilter(input)
 	assert.NoError(t, err)
-	restriction := filter.Expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction
+	restriction := filter.expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction
 	if fromArg {
 		return restriction.Arg.Member
 	}

@@ -16,8 +16,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/flopsq"
 )
 
@@ -66,8 +64,8 @@ var (
 
 // defaultOrder sorts newest first. A client order takes precedence over it,
 // and TotalOrder appends missing (id, created_at) key fields after the default.
-var defaultOrder = []aip132.OrderBy{
-	{FieldPath: aip132.NewFieldPath("captured_at"), Descending: true},
+var defaultOrder = []flop.OrderBy{
+	{FieldPath: flop.NewFieldPath("captured_at"), Descending: true},
 }
 
 const (
@@ -254,8 +252,8 @@ func baseQuery() sq.SelectBuilder {
 
 func listCursorPayments(
 	ctx context.Context,
-	order []aip132.OrderBy,
-	f *aip160.Filter,
+	order []flop.OrderBy,
+	f *flop.Filter,
 	after flop.CursorPosition,
 	size, skip int32,
 ) ([]payment, error) {
@@ -281,8 +279,8 @@ func listCursorPayments(
 
 func listOffsetPayments(
 	ctx context.Context,
-	order []aip132.OrderBy,
-	f *aip160.Filter,
+	order []flop.OrderBy,
+	f *flop.Filter,
 	page, size int32,
 ) ([]payment, int64, error) {
 	b, err := flopsq.OffsetQuery(baseQuery(), paymentSchema, order, f, page, size)
@@ -348,7 +346,7 @@ func scanPayments(rows pgx.Rows) ([]payment, error) {
 
 // parseListRequest validates the order and filter a client sent against the
 // schema, rejecting a bad one before it reaches the database.
-func parseListRequest(req listRequest) ([]aip132.OrderBy, *aip160.Filter, error) {
+func parseListRequest(req listRequest) ([]flop.OrderBy, *flop.Filter, error) {
 	f, err := paymentSchema.ParseFilter(req.Filter)
 	if err != nil {
 		return nil, nil, err

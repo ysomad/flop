@@ -5,8 +5,9 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/ysomad/flop.svg)](https://pkg.go.dev/github.com/ysomad/flop)
 
 Declarative AIP-132 ordering, AIP-160 filtering, and cursor or page-number
-pagination for Go 1.27+. The core has no dependencies; `rawsql` renders named
-SQL arguments and the separate `flopsq` module integrates with Squirrel.
+pagination for Go 1.27+. Everything lives in one dependency-free package:
+`WhereSQL`, `SeekSQL` and `OrderBySQL` render named SQL arguments, and the
+separate `flopsq` module integrates with Squirrel.
 
 ## Quickstart
 
@@ -138,7 +139,7 @@ Unquoted `null` supports only `=` and `!=`.
 `ValidateExpr` checks manually constructed trees; nil roots match everything,
 while nil nested operands, empty groups and pointer nodes are invalid.
 
-Use one `rawsql.Builder` per query so named arguments stay unique. Its `Args()`
+Use one `SQLBuilder` per query so named arguments stay unique. Its `Args()`
 returns a copy suitable for `pgx.NamedArgs`. `flopsq` preserves Squirrel's
 placeholder format and provides `Query`, `OffsetQuery`, and `CursorQuery`.
 

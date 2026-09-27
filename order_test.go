@@ -3,7 +3,6 @@ package flop
 import (
 	"testing"
 
-	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/internal/assert"
 )
 
@@ -11,12 +10,12 @@ func TestSchema_ParseOrder(t *testing.T) {
 	t.Parallel()
 	// Parsing preserves the requested terms. TestSchema_TotalOrder verifies that
 	// pagination adds every missing unique-key field.
-	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	displayName := aip132.OrderBy{FieldPath: aip132.NewFieldPath("display_name")}
-	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
-	metadataTagsDesc := aip132.OrderBy{
-		FieldPath:  aip132.NewFieldPath("metadata", "tags"),
+	createdAt := OrderBy{FieldPath: NewFieldPath("created_at")}
+	createdAtDesc := OrderBy{FieldPath: NewFieldPath("created_at"), Descending: true}
+	displayName := OrderBy{FieldPath: NewFieldPath("display_name")}
+	idDesc := OrderBy{FieldPath: NewFieldPath("id"), Descending: true}
+	metadataTagsDesc := OrderBy{
+		FieldPath:  NewFieldPath("metadata", "tags"),
 		Descending: true,
 	}
 
@@ -27,28 +26,28 @@ func TestSchema_ParseOrder(t *testing.T) {
 		name    string
 		schema  *Schema
 		args    args
-		want    []aip132.OrderBy
+		want    []OrderBy
 		wantErr assert.ErrorFunc
 	}{
 		{
 			name:    "single field",
 			schema:  testSchema(t),
 			args:    args{text: "created_at"},
-			want:    []aip132.OrderBy{createdAt},
+			want:    []OrderBy{createdAt},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "descending",
 			schema:  testSchema(t),
 			args:    args{text: "created_at desc"},
-			want:    []aip132.OrderBy{createdAtDesc},
+			want:    []OrderBy{createdAtDesc},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "several fields",
 			schema:  testSchema(t),
 			args:    args{text: "created_at desc, display_name"},
-			want:    []aip132.OrderBy{createdAtDesc, displayName},
+			want:    []OrderBy{createdAtDesc, displayName},
 			wantErr: assert.NoError,
 		},
 		{
@@ -57,7 +56,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 			name:    "clause already names the unique field",
 			schema:  testSchema(t),
 			args:    args{text: "id desc, created_at"},
-			want:    []aip132.OrderBy{idDesc, createdAt},
+			want:    []OrderBy{idDesc, createdAt},
 			wantErr: assert.NoError,
 		},
 		{
@@ -73,7 +72,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 				NewField("created_at").Ref("u.created_at").Time().Sortable(),
 			).MustBuild(),
 			args:    args{text: "created_at"},
-			want:    []aip132.OrderBy{createdAt},
+			want:    []OrderBy{createdAt},
 			wantErr: assert.NoError,
 		},
 		{
@@ -89,7 +88,7 @@ func TestSchema_ParseOrder(t *testing.T) {
 			name:    "multi segment path",
 			schema:  NewSchema(NewField("metadata", "tags").Ref("m.tags").String().Sortable()).MustBuild(),
 			args:    args{text: "metadata.tags desc"},
-			want:    []aip132.OrderBy{metadataTagsDesc},
+			want:    []OrderBy{metadataTagsDesc},
 			wantErr: assert.NoError,
 		},
 
@@ -125,59 +124,59 @@ func TestSchema_ParseOrder(t *testing.T) {
 
 func TestMergeOrder(t *testing.T) {
 	t.Parallel()
-	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	name := aip132.OrderBy{FieldPath: aip132.NewFieldPath("name")}
-	a := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a")}
-	aDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a"), Descending: true}
-	b := aip132.OrderBy{FieldPath: aip132.NewFieldPath("b")}
-	cDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("c"), Descending: true}
+	createdAt := OrderBy{FieldPath: NewFieldPath("created_at")}
+	createdAtDesc := OrderBy{FieldPath: NewFieldPath("created_at"), Descending: true}
+	id := OrderBy{FieldPath: NewFieldPath("id")}
+	name := OrderBy{FieldPath: NewFieldPath("name")}
+	a := OrderBy{FieldPath: NewFieldPath("a")}
+	aDesc := OrderBy{FieldPath: NewFieldPath("a"), Descending: true}
+	b := OrderBy{FieldPath: NewFieldPath("b")}
+	cDesc := OrderBy{FieldPath: NewFieldPath("c"), Descending: true}
 
 	type args struct {
-		def   []aip132.OrderBy
-		order []aip132.OrderBy
+		def   []OrderBy
+		order []OrderBy
 	}
 	tests := []struct {
 		name string
 		args args
-		want []aip132.OrderBy
+		want []OrderBy
 	}{
-		{name: "both empty", args: args{}, want: []aip132.OrderBy{}},
+		{name: "both empty", args: args{}, want: []OrderBy{}},
 		{
 			name: "default only",
-			args: args{def: []aip132.OrderBy{createdAtDesc}},
-			want: []aip132.OrderBy{createdAtDesc},
+			args: args{def: []OrderBy{createdAtDesc}},
+			want: []OrderBy{createdAtDesc},
 		},
 		{
 			name: "order only",
-			args: args{order: []aip132.OrderBy{name}},
-			want: []aip132.OrderBy{name},
+			args: args{order: []OrderBy{name}},
+			want: []OrderBy{name},
 		},
 		{
 			name: "order comes first",
-			args: args{def: []aip132.OrderBy{createdAtDesc}, order: []aip132.OrderBy{name}},
-			want: []aip132.OrderBy{name, createdAtDesc},
+			args: args{def: []OrderBy{createdAtDesc}, order: []OrderBy{name}},
+			want: []OrderBy{name, createdAtDesc},
 		},
 		{
 			// A field the caller ordered by keeps its direction, and is not
 			// repeated by the default.
 			name: "order wins over the default direction",
 			args: args{
-				def:   []aip132.OrderBy{createdAtDesc, id},
-				order: []aip132.OrderBy{createdAt},
+				def:   []OrderBy{createdAtDesc, id},
+				order: []OrderBy{createdAt},
 			},
-			want: []aip132.OrderBy{createdAt, id},
+			want: []OrderBy{createdAt, id},
 		},
 		{
 			name: "default order is preserved",
-			args: args{def: []aip132.OrderBy{aDesc, b, cDesc}},
-			want: []aip132.OrderBy{aDesc, b, cDesc},
+			args: args{def: []OrderBy{aDesc, b, cDesc}},
+			want: []OrderBy{aDesc, b, cDesc},
 		},
 		{
 			name: "repeats within an input collapse",
-			args: args{def: []aip132.OrderBy{b, b, a}, order: []aip132.OrderBy{aDesc, a}},
-			want: []aip132.OrderBy{aDesc, b},
+			args: args{def: []OrderBy{b, b, a}, order: []OrderBy{aDesc, a}},
+			want: []OrderBy{aDesc, b},
 		},
 	}
 
@@ -191,14 +190,14 @@ func TestMergeOrder(t *testing.T) {
 
 func TestSchema_TotalOrder(t *testing.T) {
 	t.Parallel()
-	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
-	displayName := aip132.OrderBy{FieldPath: aip132.NewFieldPath("display_name")}
-	amount := aip132.OrderBy{FieldPath: aip132.NewFieldPath("amount")}
-	amountDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("amount"), Descending: true}
-	a := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a")}
+	createdAt := OrderBy{FieldPath: NewFieldPath("created_at")}
+	createdAtDesc := OrderBy{FieldPath: NewFieldPath("created_at"), Descending: true}
+	id := OrderBy{FieldPath: NewFieldPath("id")}
+	idDesc := OrderBy{FieldPath: NewFieldPath("id"), Descending: true}
+	displayName := OrderBy{FieldPath: NewFieldPath("display_name")}
+	amount := OrderBy{FieldPath: NewFieldPath("amount")}
+	amountDesc := OrderBy{FieldPath: NewFieldPath("amount"), Descending: true}
+	a := OrderBy{FieldPath: NewFieldPath("a")}
 
 	// A composite key has to end up complete, wherever its fields were asked for.
 	composite := NewSchema(
@@ -208,94 +207,94 @@ func TestSchema_TotalOrder(t *testing.T) {
 	).CompositeKey("id", "created_at").MustBuild()
 
 	type args struct {
-		order []aip132.OrderBy
+		order []OrderBy
 	}
 	tests := []struct {
 		name   string
 		schema *Schema
 		args   args
-		want   []aip132.OrderBy
+		want   []OrderBy
 	}{
 		{
 			name:   "appends the unique field",
 			schema: testSchema(t),
-			args:   args{order: []aip132.OrderBy{createdAtDesc}},
-			want:   []aip132.OrderBy{createdAtDesc, id},
+			args:   args{order: []OrderBy{createdAtDesc}},
+			want:   []OrderBy{createdAtDesc, id},
 		},
 		{
 			// Composing before appending is the point: the tie-breaker has to
 			// end up last, behind whatever the default contributed.
 			name:   "appends behind a merged default",
 			schema: testSchema(t),
-			args:   args{order: MergeOrder([]aip132.OrderBy{createdAtDesc}, []aip132.OrderBy{displayName})},
-			want:   []aip132.OrderBy{displayName, createdAtDesc, id},
+			args:   args{order: MergeOrder([]OrderBy{createdAtDesc}, []OrderBy{displayName})},
+			want:   []OrderBy{displayName, createdAtDesc, id},
 		},
 		{
 			name:   "order already names the unique field",
 			schema: testSchema(t),
-			args:   args{order: []aip132.OrderBy{idDesc, createdAt}},
-			want:   []aip132.OrderBy{idDesc, createdAt},
+			args:   args{order: []OrderBy{idDesc, createdAt}},
+			want:   []OrderBy{idDesc, createdAt},
 		},
 		{
 			name:   "merged order already names the unique field",
 			schema: testSchema(t),
 			args: args{order: MergeOrder(
-				[]aip132.OrderBy{createdAtDesc},
-				[]aip132.OrderBy{idDesc, displayName},
+				[]OrderBy{createdAtDesc},
+				[]OrderBy{idDesc, displayName},
 			)},
-			want: []aip132.OrderBy{idDesc, displayName, createdAtDesc},
+			want: []OrderBy{idDesc, displayName, createdAtDesc},
 		},
 		{
 			name:   "request overrides the default direction",
 			schema: testSchema(t),
 			args: args{order: MergeOrder(
-				[]aip132.OrderBy{createdAtDesc},
-				[]aip132.OrderBy{createdAt},
+				[]OrderBy{createdAtDesc},
+				[]OrderBy{createdAt},
 			)},
-			want: []aip132.OrderBy{createdAt, id},
+			want: []OrderBy{createdAt, id},
 		},
 		{
 			name:   "empty order",
 			schema: testSchema(t),
 			args:   args{},
-			want:   []aip132.OrderBy{id},
+			want:   []OrderBy{id},
 		},
 		{
 			name:   "no unique field declared",
 			schema: NewSchema(NewField("a").Ref("a").Int().Sortable()).MustBuild(),
-			args:   args{order: []aip132.OrderBy{a}},
-			want:   []aip132.OrderBy{a},
+			args:   args{order: []OrderBy{a}},
+			want:   []OrderBy{a},
 		},
 
 		{
 			name:   "composite key on an empty order",
 			schema: composite,
 			args:   args{},
-			want:   []aip132.OrderBy{id, createdAt},
+			want:   []OrderBy{id, createdAt},
 		},
 		{
 			name:   "composite key is fully missing",
 			schema: composite,
-			args:   args{order: []aip132.OrderBy{amountDesc}},
-			want:   []aip132.OrderBy{amountDesc, id, createdAt},
+			args:   args{order: []OrderBy{amountDesc}},
+			want:   []OrderBy{amountDesc, id, createdAt},
 		},
 		{
 			name:   "composite key misses its time field",
 			schema: composite,
-			args:   args{order: []aip132.OrderBy{idDesc}},
-			want:   []aip132.OrderBy{idDesc, createdAt},
+			args:   args{order: []OrderBy{idDesc}},
+			want:   []OrderBy{idDesc, createdAt},
 		},
 		{
 			name:   "composite key misses its id field",
 			schema: composite,
-			args:   args{order: []aip132.OrderBy{createdAtDesc}},
-			want:   []aip132.OrderBy{createdAtDesc, id},
+			args:   args{order: []OrderBy{createdAtDesc}},
+			want:   []OrderBy{createdAtDesc, id},
 		},
 		{
 			name:   "composite key keeps explicit positions",
 			schema: composite,
-			args:   args{order: []aip132.OrderBy{createdAtDesc, amount, idDesc}},
-			want:   []aip132.OrderBy{createdAtDesc, amount, idDesc},
+			args:   args{order: []OrderBy{createdAtDesc, amount, idDesc}},
+			want:   []OrderBy{createdAtDesc, amount, idDesc},
 		},
 	}
 

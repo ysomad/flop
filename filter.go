@@ -6,9 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
 )
 
 // Op is the comparison a [Cmp] makes.
@@ -166,8 +163,8 @@ var likeReplacer = strings.NewReplacer(
 )
 
 // ParseFilter parses an AIP-160 filter and validates it against the schema.
-func (s *Schema) ParseFilter(text string) (*aip160.Filter, error) {
-	filter, err := aip160.ParseFilter(text)
+func (s *Schema) ParseFilter(text string) (*Filter, error) {
+	filter, err := ParseFilter(text)
 	if err != nil {
 		return nil, errorf(ErrInvalidFilter, "%v", err)
 	}
@@ -179,7 +176,7 @@ func (s *Schema) ParseFilter(text string) (*aip160.Filter, error) {
 
 // ValidateFilter reports whether every restriction names a filterable field,
 // uses an operator that field accepts, and carries a value of its type.
-func (s *Schema) ValidateFilter(filter *aip160.Filter) error {
+func (s *Schema) ValidateFilter(filter *Filter) error {
 	_, err := s.CompileFilter(filter)
 	return err
 }
@@ -188,23 +185,23 @@ func (s *Schema) ValidateFilter(filter *aip160.Filter) error {
 // the Go value its field's type calls for.
 //
 // A nil or empty filter compiles to a nil Expr, meaning match everything.
-func (s *Schema) CompileFilter(filter *aip160.Filter) (Expr, error) {
-	if filter == nil || filter.Expression == nil {
+func (s *Schema) CompileFilter(filter *Filter) (Expr, error) {
+	if filter == nil || filter.expression == nil {
 		return nil, nil
 	}
-	return s.compileExpression(filter.Expression)
+	return s.compileExpression(filter.expression)
 }
 
-func (s *Schema) compileExpression(e *aip160.Expression) (Expr, error) {
+func (s *Schema) compileExpression(e *expression) (Expr, error) {
 	// A sequence carries the same meaning as AND under exact-match semantics,
 	// which is all a database can offer, so both levels flatten into one And.
 	var exprs []Expr
-	for _, sequence := range e.Sequences {
-		if len(sequence.Factors) == 0 {
+	for _, seq := range e.Sequences {
+		if len(seq.Factors) == 0 {
 			return nil, errorf(ErrInvalidFilter, "sequence is empty")
 		}
-		for _, factor := range sequence.Factors {
-			expr, err := s.compileFactor(factor)
+		for _, f := range seq.Factors {
+			expr, err := s.compileFactor(f)
 			if err != nil {
 				return nil, err
 			}
@@ -222,10 +219,10 @@ func (s *Schema) compileExpression(e *aip160.Expression) (Expr, error) {
 	return And{Exprs: exprs}, nil
 }
 
-func (s *Schema) compileFactor(f aip160.Factor) (Expr, error) {
+func (s *Schema) compileFactor(f factor) (Expr, error) {
 	exprs := make([]Expr, 0, len(f.Terms))
-	for _, term := range f.Terms {
-		expr, err := s.compileTerm(term)
+	for _, t := range f.Terms {
+		expr, err := s.compileTerm(t)
 		if err != nil {
 			return nil, err
 		}
@@ -240,7 +237,7 @@ func (s *Schema) compileFactor(f aip160.Factor) (Expr, error) {
 	return Or{Exprs: exprs}, nil
 }
 
-func (s *Schema) compileTerm(t aip160.Term) (Expr, error) {
+func (s *Schema) compileTerm(t term) (Expr, error) {
 	if t.Simple.Composite != nil && t.Simple.Restriction != nil {
 		return nil, errorf(ErrInvalidFilter, "term has both a restriction and a composite")
 	}
@@ -265,16 +262,16 @@ func (s *Schema) compileTerm(t aip160.Term) (Expr, error) {
 	return expr, nil
 }
 
-func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
-	member := r.Member
-	if err := validateMember(member); err != nil {
+func (s *Schema) compileRestriction(r *restriction) (Expr, error) {
+	m := r.Member
+	if err := validateMember(m); err != nil {
 		return nil, err
 	}
 	if r.Comparator == "" {
 		if r.Arg != nil {
 			return nil, errorf(ErrInvalidFilter, "argument has no comparator")
 		}
-		return s.compileImplicit(member)
+		return s.compileImplicit(m)
 	}
 	if r.Arg == nil {
 		return nil, errorf(ErrInvalidFilter, "comparison has no argument")
@@ -283,11 +280,11 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 		return nil, errorf(
 			ErrInvalidFilter,
 			"field %q is compared against a parenthesized expression",
-			member.Input(),
+			m.Input(),
 		)
 	}
 
-	path := memberPath(member)
+	path := memberPath(m)
 	field, err := s.FilterableField(path)
 	if err != nil {
 		return nil, err
@@ -301,13 +298,13 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 		)
 	}
 
-	arg := r.Arg.Member
-	if err := validateMember(arg); err != nil {
+	a := r.Arg.Member
+	if err := validateMember(a); err != nil {
 		return nil, err
 	}
 	// A bare null is the only literal that crosses every type, and only an
 	// equality can ask about it.
-	if !arg.Quoted() && arg.Path() == "null" {
+	if !a.Quoted() && a.Path() == "null" {
 		if op != OpEq && op != OpNe {
 			return nil, errorf(
 				ErrInvalidFilter,
@@ -318,7 +315,7 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 		return Cmp{Field: field, Op: op, Value: nil}, nil
 	}
 
-	value, err := coerce(field, arg)
+	v, err := coerce(field, a)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +323,7 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 	// A * in a string argument makes the restriction a pattern match, whichever
 	// comparator asked for it. The has operator keeps searching anywhere in the
 	// value when the client wrote no wildcard of its own.
-	if text, ok := value.(string); ok && strings.Contains(text, "*") {
+	if text, ok := v.(string); ok && strings.Contains(text, "*") {
 		pattern := Cmp{Field: field, Op: OpLike, Value: likeReplacer.Replace(text)}
 		if op == OpNe {
 			return Not{Expr: pattern}, nil
@@ -334,15 +331,15 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 		return pattern, nil
 	}
 	if op == OpLike {
-		value = likePattern(value.(string))
+		v = likePattern(v.(string))
 	}
-	return Cmp{Field: field, Op: op, Value: value}, nil
+	return Cmp{Field: field, Op: op, Value: v}, nil
 }
 
-func validateMember(member aip160.Member) error {
-	values := append([]aip160.Value{member.Value}, member.Fields...)
-	for _, value := range values {
-		if value.Value == "" && !value.Quoted {
+func validateMember(m member) error {
+	values := append([]value{m.Value}, m.Fields...)
+	for _, v := range values {
+		if v.Value == "" && !v.Quoted {
 			return errorf(ErrInvalidFilter, "member has an empty unquoted segment")
 		}
 	}
@@ -353,22 +350,22 @@ func validateMember(member aip160.Member) error {
 //
 // The segments are taken one at a time rather than by splitting Member.Path,
 // because a quoted segment may itself contain a dot.
-func memberPath(m aip160.Member) aip132.FieldPath {
+func memberPath(m member) FieldPath {
 	segments := make([]string, 0, len(m.Fields)+1)
 	segments = append(segments, m.Value.Value)
 	for _, field := range m.Fields {
 		segments = append(segments, field.Value)
 	}
-	return aip132.NewFieldPath(segments...)
+	return NewFieldPath(segments...)
 }
 
 // compileImplicit expands a bare value into a search of every field declared
 // implicit, which is what AIP-160 calls a global restriction.
-func (s *Schema) compileImplicit(member aip160.Member) (Expr, error) {
+func (s *Schema) compileImplicit(m member) (Expr, error) {
 	if len(s.implicit) == 0 {
-		return nil, errorf(ErrInvalidFilter, "no field is searched by the bare value %q", member.Input())
+		return nil, errorf(ErrInvalidFilter, "no field is searched by the bare value %q", m.Input())
 	}
-	pattern := likePattern(member.Path())
+	pattern := likePattern(m.Path())
 	exprs := make([]Expr, 0, len(s.implicit))
 	for _, field := range s.implicit {
 		exprs = append(exprs, Cmp{Field: field, Op: OpLike, Value: pattern})
@@ -385,13 +382,13 @@ func (s *Schema) compileImplicit(member aip160.Member) (Expr, error) {
 // identifiers true and null carry meaning only against a field that is typed
 // to receive them, so quoting one asks for the text. A timestamp is read either
 // way, because the colons of RFC 3339 lex as comparators unless it is quoted.
-func coerce(field *Field, arg aip160.Member) (any, error) {
-	text := arg.Path()
+func coerce(field *Field, a member) (any, error) {
+	text := a.Path()
 	invalid := func(want string) error {
 		return errorf(
 			ErrInvalidFilter,
 			"field %q takes %s, and %s is not one",
-			field.path.String(), want, arg.Input(),
+			field.path.String(), want, a.Input(),
 		)
 	}
 
@@ -399,7 +396,7 @@ func coerce(field *Field, arg aip160.Member) (any, error) {
 	case fieldTypeString:
 		return text, nil
 	case fieldTypeInt:
-		if arg.Quoted() {
+		if a.Quoted() {
 			return nil, invalid("an integer")
 		}
 		value, err := strconv.ParseInt(text, 10, 64)
@@ -408,7 +405,7 @@ func coerce(field *Field, arg aip160.Member) (any, error) {
 		}
 		return value, nil
 	case fieldTypeFloat:
-		if arg.Quoted() {
+		if a.Quoted() {
 			return nil, invalid("a number")
 		}
 		value, err := strconv.ParseFloat(text, 64)
@@ -417,7 +414,7 @@ func coerce(field *Field, arg aip160.Member) (any, error) {
 		}
 		return value, nil
 	case fieldTypeBool:
-		if arg.Quoted() {
+		if a.Quoted() {
 			return nil, invalid("true or false")
 		}
 		switch text {

@@ -15,7 +15,7 @@
 // Modified in 2026 by the flop authors. See NOTICE for source and attribution
 // details.
 
-package aip132
+package flop
 
 // This file contains a scanner and parser for AIP-132 order_by clauses.
 //

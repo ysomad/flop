@@ -1,4 +1,4 @@
-package rawsql_test
+package flop_test
 
 import (
 	"regexp"
@@ -6,12 +6,10 @@ import (
 	"time"
 
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/aip132"
 	"github.com/ysomad/flop/internal/assert"
-	"github.com/ysomad/flop/rawsql"
 )
 
-var schema = flop.NewSchema(
+var sqlSchema = flop.NewSchema(
 	flop.NewField("id").Ref("u.id").Int().Unique(),
 	flop.NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit(),
 	flop.NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable(),
@@ -22,7 +20,7 @@ var schema = flop.NewSchema(
 	flop.NewField("metadata", "tags").Ref("u.tags").String().Filterable(),
 ).MustBuild()
 
-func TestWhere(t *testing.T) {
+func TestWhereSQL(t *testing.T) {
 	t.Parallel()
 	createdAt := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
 
@@ -172,12 +170,12 @@ func TestWhere(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			filter, err := schema.ParseFilter(test.args.filter)
+			filter, err := sqlSchema.ParseFilter(test.args.filter)
 			if err != nil {
 				test.wantErr(t, err)
 				return
 			}
-			got, gotArgs, gotErr := rawsql.Where(schema, filter)
+			got, gotArgs, gotErr := flop.WhereSQL(sqlSchema, filter)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
 				return
@@ -188,16 +186,16 @@ func TestWhere(t *testing.T) {
 	}
 }
 
-func TestOrderBy(t *testing.T) {
+func TestOrderBySQL(t *testing.T) {
 	t.Parallel()
-	createdAtAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	idAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	nopeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("nope")}
-	activeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("active")}
+	createdAtAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at")}
+	createdAtDesc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at"), Descending: true}
+	idAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("id")}
+	nopeAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("nope")}
+	activeAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("active")}
 
 	type args struct {
-		order []aip132.OrderBy
+		order []flop.OrderBy
 	}
 	tests := []struct {
 		name         string
@@ -209,31 +207,31 @@ func TestOrderBy(t *testing.T) {
 		{name: "empty", args: args{}, want: "", wantErr: assert.NoError},
 		{
 			name:    "ascending",
-			args:    args{order: []aip132.OrderBy{createdAtAsc}},
+			args:    args{order: []flop.OrderBy{createdAtAsc}},
 			want:    "u.created_at",
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "descending",
-			args:    args{order: []aip132.OrderBy{createdAtDesc}},
+			args:    args{order: []flop.OrderBy{createdAtDesc}},
 			want:    "u.created_at DESC",
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "several fields keep their order",
-			args:    args{order: []aip132.OrderBy{createdAtDesc, idAsc}},
+			args:    args{order: []flop.OrderBy{createdAtDesc, idAsc}},
 			want:    "u.created_at DESC, u.id",
 			wantErr: assert.NoError,
 		},
-		{name: "undeclared field", args: args{order: []aip132.OrderBy{nopeAsc}}, wantErr: assert.Error},
+		{name: "undeclared field", args: args{order: []flop.OrderBy{nopeAsc}}, wantErr: assert.Error},
 		{
 			name:    "declared but not sortable",
-			args:    args{order: []aip132.OrderBy{activeAsc}},
+			args:    args{order: []flop.OrderBy{activeAsc}},
 			wantErr: assert.Error,
 		},
 		{
 			name:         "repeated field",
-			args:         args{order: []aip132.OrderBy{idAsc, {FieldPath: idAsc.FieldPath, Descending: true}}},
+			args:         args{order: []flop.OrderBy{idAsc, {FieldPath: idAsc.FieldPath, Descending: true}}},
 			wantSentinel: flop.ErrInvalidOrder,
 			wantErr:      assert.Error,
 		},
@@ -242,7 +240,7 @@ func TestOrderBy(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, gotErr := rawsql.OrderBy(schema, test.args.order)
+			got, gotErr := flop.OrderBySQL(sqlSchema, test.args.order)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
 				if test.wantSentinel != nil {
@@ -255,22 +253,22 @@ func TestOrderBy(t *testing.T) {
 	}
 }
 
-func TestSeek(t *testing.T) {
+func TestSeekSQL(t *testing.T) {
 	t.Parallel()
-	createdAtPath := aip132.NewFieldPath("created_at")
-	idPath := aip132.NewFieldPath("id")
-	nopePath := aip132.NewFieldPath("nope")
+	createdAtPath := flop.NewFieldPath("created_at")
+	idPath := flop.NewFieldPath("id")
+	nopePath := flop.NewFieldPath("nope")
 
-	createdAtAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	idAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
-	nopeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("nope")}
+	createdAtAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at")}
+	createdAtDesc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at"), Descending: true}
+	idAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("id")}
+	idDesc := flop.OrderBy{FieldPath: flop.NewFieldPath("id"), Descending: true}
+	nopeAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("nope")}
 
 	createdAt := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
 
 	type args struct {
-		order []aip132.OrderBy
+		order []flop.OrderBy
 		pos   flop.CursorPosition
 	}
 	tests := []struct {
@@ -284,7 +282,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "single unique field",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []flop.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			want:     "(u.id > @id_1)",
@@ -294,7 +292,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "descending flips the comparison",
 			args: args{
-				order: []aip132.OrderBy{idDesc},
+				order: []flop.OrderBy{idDesc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			want:     "(u.id < @id_1)",
@@ -306,7 +304,7 @@ func TestSeek(t *testing.T) {
 			// than as a row value.
 			name: "mixed directions",
 			args: args{
-				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				order: []flop.OrderBy{createdAtDesc, idAsc},
 				pos: flop.CursorPosition{
 					{FieldPath: createdAtPath, Value: createdAt},
 					{FieldPath: idPath, Value: int64(7)},
@@ -323,7 +321,7 @@ func TestSeek(t *testing.T) {
 		},
 		{
 			name:     "no position is a first page",
-			args:     args{order: []aip132.OrderBy{idAsc}},
+			args:     args{order: []flop.OrderBy{idAsc}},
 			want:     "",
 			wantArgs: map[string]any{},
 			wantErr:  assert.NoError,
@@ -333,7 +331,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "order without a unique field",
 			args: args{
-				order: []aip132.OrderBy{createdAtAsc},
+				order: []flop.OrderBy{createdAtAsc},
 				pos:   flop.CursorPosition{{FieldPath: createdAtPath, Value: createdAt}},
 			},
 			wantErr: assert.Error,
@@ -341,7 +339,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "position does not cover the order",
 			args: args{
-				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				order: []flop.OrderBy{createdAtDesc, idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			wantErr: assert.Error,
@@ -349,7 +347,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "position names a field the order does not",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []flop.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: createdAtPath, Value: createdAt}},
 			},
 			wantErr: assert.Error,
@@ -357,7 +355,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "null position value",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []flop.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: nil}},
 			},
 			wantErr: assert.Error,
@@ -365,14 +363,14 @@ func TestSeek(t *testing.T) {
 		{
 			name: "undeclared ordering field",
 			args: args{
-				order: []aip132.OrderBy{nopeAsc},
+				order: []flop.OrderBy{nopeAsc},
 				pos:   flop.CursorPosition{{FieldPath: nopePath, Value: int64(1)}},
 			},
 			wantErr: assert.Error,
 		},
 		{
 			name:         "repeated ordering field",
-			args:         args{order: []aip132.OrderBy{idAsc, idDesc}},
+			args:         args{order: []flop.OrderBy{idAsc, idDesc}},
 			wantSentinel: flop.ErrInvalidOrder,
 			wantErr:      assert.Error,
 		},
@@ -381,7 +379,7 @@ func TestSeek(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, gotArgs, gotErr := rawsql.Seek(schema, test.args.order, test.args.pos)
+			got, gotArgs, gotErr := flop.SeekSQL(sqlSchema, test.args.order, test.args.pos)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
 				if test.wantSentinel != nil {
@@ -395,7 +393,7 @@ func TestSeek(t *testing.T) {
 	}
 }
 
-func TestBuilder_Where(t *testing.T) {
+func TestSQLBuilder_Where(t *testing.T) {
 	t.Parallel()
 	type args struct {
 		filter string
@@ -418,9 +416,9 @@ func TestBuilder_Where(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			filter, err := schema.ParseFilter(test.args.filter)
+			filter, err := sqlSchema.ParseFilter(test.args.filter)
 			assert.NoError(t, err)
-			got, gotErr := rawsql.NewBuilder().Where(schema, filter)
+			got, gotErr := flop.NewSQLBuilder().Where(sqlSchema, filter)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
 				return
@@ -430,17 +428,17 @@ func TestBuilder_Where(t *testing.T) {
 	}
 }
 
-func TestBuilder_Seek(t *testing.T) {
+func TestSQLBuilder_Seek(t *testing.T) {
 	t.Parallel()
-	createdAtPath := aip132.NewFieldPath("created_at")
-	idPath := aip132.NewFieldPath("id")
+	createdAtPath := flop.NewFieldPath("created_at")
+	idPath := flop.NewFieldPath("id")
 	createdAt := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
-	order, err := schema.ParseOrder("created_at desc")
+	order, err := sqlSchema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
-	order = schema.TotalOrder(order)
+	order = sqlSchema.TotalOrder(order)
 
 	type args struct {
-		order []aip132.OrderBy
+		order []flop.OrderBy
 		pos   flop.CursorPosition
 	}
 	tests := []struct {
@@ -469,7 +467,7 @@ func TestBuilder_Seek(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, gotErr := rawsql.NewBuilder().Seek(schema, test.args.order, test.args.pos)
+			got, gotErr := flop.NewSQLBuilder().Seek(sqlSchema, test.args.order, test.args.pos)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
 				return
@@ -482,26 +480,26 @@ func TestBuilder_Seek(t *testing.T) {
 // TestBuilder_Args covers what the one-shot functions cannot: a query taking
 // more than one fragment must keep its argument names unique across all of
 // them, and what Args hands back is a copy.
-func TestBuilder_Args(t *testing.T) {
+func TestSQLBuilder_Args(t *testing.T) {
 	t.Parallel()
-	createdAtPath := aip132.NewFieldPath("created_at")
-	idPath := aip132.NewFieldPath("id")
+	createdAtPath := flop.NewFieldPath("created_at")
+	idPath := flop.NewFieldPath("id")
 
-	filter, err := schema.ParseFilter("active = true")
+	filter, err := sqlSchema.ParseFilter("active = true")
 	assert.NoError(t, err)
-	order, err := schema.ParseOrder("created_at desc")
+	order, err := sqlSchema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
-	order = schema.TotalOrder(order)
+	order = sqlSchema.TotalOrder(order)
 	createdAt := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
 	pos := flop.CursorPosition{
 		{FieldPath: createdAtPath, Value: createdAt},
 		{FieldPath: idPath, Value: int64(7)},
 	}
 
-	b := rawsql.NewBuilder()
-	_, err = b.Where(schema, filter)
+	b := flop.NewSQLBuilder()
+	_, err = b.Where(sqlSchema, filter)
 	assert.NoError(t, err)
-	_, err = b.Seek(schema, order, pos)
+	_, err = b.Seek(sqlSchema, order, pos)
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]any{
 		"active_1":     true,
@@ -514,7 +512,7 @@ func TestBuilder_Args(t *testing.T) {
 	delete(snapshot, "active_1")
 	snapshot["created_at_2"] = "corrupt"
 	snapshot["extra"] = true
-	_, err = b.WhereExpr(flop.Cmp{Field: schema.Fields()[0], Op: flop.OpEq, Value: int64(1)})
+	_, err = b.WhereExpr(flop.Cmp{Field: sqlSchema.Fields()[0], Op: flop.OpEq, Value: int64(1)})
 	assert.NoError(t, err)
 	assert.Equal[any](t, true, b.Args()["active_1"])
 	assert.Equal[any](t, createdAt, b.Args()["created_at_2"])
@@ -522,19 +520,19 @@ func TestBuilder_Args(t *testing.T) {
 	assert.Equal(t, nil, snapshot["id_5"])
 }
 
-func TestWhereExpr(t *testing.T) {
+func TestWhereExprSQL(t *testing.T) {
 	t.Parallel()
-	filter, err := schema.ParseFilter("age = 30")
+	filter, err := sqlSchema.ParseFilter("age = 30")
 	assert.NoError(t, err)
-	expr, err := schema.CompileFilter(filter)
+	expr, err := sqlSchema.CompileFilter(filter)
 	assert.NoError(t, err)
 
-	got, gotArgs, gotErr := rawsql.WhereExpr(expr)
+	got, gotArgs, gotErr := flop.WhereExprSQL(expr)
 	assert.NoError(t, gotErr)
 	assert.Equal(t, "(u.age = @age_1)", got)
 	assert.Equal(t, map[string]any{"age_1": int64(30)}, gotArgs)
 
-	got, gotArgs, gotErr = rawsql.WhereExpr(nil)
+	got, gotArgs, gotErr = flop.WhereExprSQL(nil)
 	assert.NoError(t, gotErr)
 	assert.Equal(t, "", got)
 	assert.Equal(t, map[string]any{}, gotArgs)
@@ -542,9 +540,9 @@ func TestWhereExpr(t *testing.T) {
 
 type unsupportedExpr struct{ flop.Expr }
 
-func TestBuilder_WhereExpr(t *testing.T) {
+func TestSQLBuilder_WhereExpr(t *testing.T) {
 	t.Parallel()
-	field := schema.Fields()[0]
+	field := sqlSchema.Fields()[0]
 	cmp := flop.Cmp{Field: field, Op: flop.OpEq, Value: int64(1)}
 
 	type args struct {
@@ -594,7 +592,7 @@ func TestBuilder_WhereExpr(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			builder := rawsql.NewBuilder()
+			builder := flop.NewSQLBuilder()
 			got, gotErr := builder.WhereExpr(test.args.expr)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
@@ -617,7 +615,7 @@ func TestBuilder_WhereExpr(t *testing.T) {
 		flop.NewField("世界").Ref("safe_column").String(),
 		flop.NewField("!").Ref("safe_column").String(),
 	).MustBuild()
-	var builder rawsql.Builder
+	var builder flop.SQLBuilder
 	marker := regexp.MustCompile(`@([A-Za-z_][A-Za-z_0-9]*)`)
 	fields := named.Fields()
 	wantNames := []string{"caf__1", "a_b_2", "a_b_3", "nested_odd_name_4", "___5", "__6"}

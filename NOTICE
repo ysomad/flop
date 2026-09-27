@@ -7,8 +7,8 @@ Apache License, Version 2.0.
 
 The following files are derived from LUCI and have been modified for flop:
 
-  aip132/orderby_parser.go  from common/data/aip132/orderby_parser.go
-  aip160/filter_parser.go   from common/data/aip160/filter_parser.go
+  orderby_parser.go  from common/data/aip132/orderby_parser.go
+  filter_parser.go   from common/data/aip160/filter_parser.go
 
 The LUCI copyright and Apache-2.0 license notices are retained in those files.
 

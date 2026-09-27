@@ -1,9 +1,9 @@
-package aip132_test
+package flop_test
 
 import (
 	"testing"
 
-	"github.com/ysomad/flop/aip132"
+	"github.com/ysomad/flop"
 	"github.com/ysomad/flop/internal/assert"
 )
 
@@ -12,7 +12,7 @@ func TestParseOrderBy(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    []aip132.OrderBy
+		want    []flop.OrderBy
 		wantErr assert.ErrorFunc
 	}{
 		{name: "empty", input: "", want: nil, wantErr: assert.NoError},
@@ -20,56 +20,56 @@ func TestParseOrderBy(t *testing.T) {
 		{
 			name:    "single field",
 			input:   "create_time",
-			want:    []aip132.OrderBy{{FieldPath: aip132.NewFieldPath("create_time")}},
+			want:    []flop.OrderBy{{FieldPath: flop.NewFieldPath("create_time")}},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "descending and nested path",
 			input: "create_time desc, user.name",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time"), Descending: true},
-				{FieldPath: aip132.NewFieldPath("user", "name")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("create_time"), Descending: true},
+				{FieldPath: flop.NewFieldPath("user", "name")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "quoted segment",
 			input: "metadata.`odd name`.value",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "odd name", "value")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("metadata", "odd name", "value")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "escaped backtick",
 			input: "metadata.`a``b`",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "a`b")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("metadata", "a`b")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "spaces around dot are insignificant",
 			input: "user . name",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("user", "name")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("user", "name")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "spaces at every junction",
 			input: " a .b, c. d desc ",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("a", "b")},
-				{FieldPath: aip132.NewFieldPath("c", "d"), Descending: true},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("a", "b")},
+				{FieldPath: flop.NewFieldPath("c", "d"), Descending: true},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "spaces around dot with quoted segment",
 			input: "metadata . `odd name` . value",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("metadata", "odd name", "value")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("metadata", "odd name", "value")},
 			},
 			wantErr: assert.NoError,
 		},
@@ -77,24 +77,24 @@ func TestParseOrderBy(t *testing.T) {
 			// A dot binds tighter than the desc suffix, so this is one field.
 			name:  "dot wins over desc suffix",
 			input: "create_time. desc",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("create_time", "desc")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("create_time", "desc")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "empty quoted segment",
 			input: "``",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("")},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("")},
 			},
 			wantErr: assert.NoError,
 		},
 		{
 			name:  "field named desc in descending order",
 			input: "desc desc",
-			want: []aip132.OrderBy{
-				{FieldPath: aip132.NewFieldPath("desc"), Descending: true},
+			want: []flop.OrderBy{
+				{FieldPath: flop.NewFieldPath("desc"), Descending: true},
 			},
 			wantErr: assert.NoError,
 		},
@@ -115,7 +115,7 @@ func TestParseOrderBy(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := aip132.ParseOrderBy(test.input)
+			got, err := flop.ParseOrderBy(test.input)
 			test.wantErr(t, err)
 			if err != nil {
 				return
@@ -147,7 +147,7 @@ func TestNewFieldPath(t *testing.T) {
 			// The path is taken over the segments, so a caller changing them
 			// afterwards cannot reach it.
 			segments := append([]string{}, test.args.segments...)
-			path := aip132.NewFieldPath(segments...)
+			path := flop.NewFieldPath(segments...)
 			segments[0] = "changed"
 			assert.Equal(t, test.want, path.Segments())
 		})
@@ -171,7 +171,7 @@ func TestFieldPath_String(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, test.want, aip132.NewFieldPath(test.segments...).String())
+			assert.Equal(t, test.want, flop.NewFieldPath(test.segments...).String())
 		})
 	}
 }
@@ -192,7 +192,7 @@ func TestFieldPath_Segments(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			path := aip132.NewFieldPath(test.segments...)
+			path := flop.NewFieldPath(test.segments...)
 			// What is handed back is a copy, so writing to it changes nothing.
 			path.Segments()[0] = "changed"
 			assert.Equal(t, test.want, path.Segments())
@@ -203,7 +203,7 @@ func TestFieldPath_Segments(t *testing.T) {
 func TestFieldPath_Equals(t *testing.T) {
 	t.Parallel()
 	type args struct {
-		other aip132.FieldPath
+		other flop.FieldPath
 	}
 	tests := []struct {
 		name     string
@@ -211,28 +211,28 @@ func TestFieldPath_Equals(t *testing.T) {
 		args     args
 		want     bool
 	}{
-		{name: "single", segments: []string{"name"}, args: args{other: aip132.NewFieldPath("name")}, want: true},
+		{name: "single", segments: []string{"name"}, args: args{other: flop.NewFieldPath("name")}, want: true},
 		{
 			name:     "nested",
 			segments: []string{"user", "name"},
-			args:     args{other: aip132.NewFieldPath("user", "name")},
+			args:     args{other: flop.NewFieldPath("user", "name")},
 			want:     true,
 		},
 		{
 			name:     "quoted",
 			segments: []string{"metadata", "odd name"},
-			args:     args{other: aip132.NewFieldPath("metadata", "odd name")},
+			args:     args{other: flop.NewFieldPath("metadata", "odd name")},
 			want:     true,
 		},
-		{name: "escaped backtick", segments: []string{"a`b"}, args: args{other: aip132.NewFieldPath("a`b")}, want: true},
-		{name: "another path", segments: []string{"name"}, args: args{other: aip132.NewFieldPath("other")}},
-		{name: "prefix", segments: []string{"user", "name"}, args: args{other: aip132.NewFieldPath("user")}},
+		{name: "escaped backtick", segments: []string{"a`b"}, args: args{other: flop.NewFieldPath("a`b")}, want: true},
+		{name: "another path", segments: []string{"name"}, args: args{other: flop.NewFieldPath("other")}},
+		{name: "prefix", segments: []string{"user", "name"}, args: args{other: flop.NewFieldPath("user")}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, test.want, aip132.NewFieldPath(test.segments...).Equals(test.args.other))
+			assert.Equal(t, test.want, flop.NewFieldPath(test.segments...).Equals(test.args.other))
 		})
 	}
 }
