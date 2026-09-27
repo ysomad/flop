@@ -5,148 +5,166 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/ysomad/flop.svg)](https://pkg.go.dev/github.com/ysomad/flop)
 
 Declarative AIP-132 ordering, AIP-160 filtering, and cursor or page-number
-pagination for Go 1.27+
+pagination for Go 1.27+. The core has no dependencies; `rawsql` renders named
+SQL arguments and the separate `flopsq` module integrates with Squirrel.
 
-| Package | Contents |
-| --- | --- |
-| `flop` | schema, filter compiler, ordering, cursors, page numbers |
-| [`flop/aip160`](./aip160) | AIP-160 filter parser and syntax tree |
-| [`flop/aip132`](./aip132) | AIP-132 order_by parser |
-| [`flop/rawsql`](./rawsql) | SQL text and named arguments |
-| [`flop/flopsq`](./flopsq) | [squirrel](https://github.com/Masterminds/squirrel) query builders |
+## Quickstart
 
-## Schema
+Install `github.com/ysomad/flop/flopsq` with `go get`, save this as `main.go`,
+and run `go run .`. It builds a PostgreSQL query and pages sample rows without
+connecting to a database. The same example runs in [Go tests](flopsq/example_test.go).
 
 ```go
-var payments = flop.NewSchema(
-	flop.NewField("id").String().Unique().Value(func(p payment) any { return p.ID }),
-	flop.NewField("amount").Int().Filterable().Sortable(),
-	flop.NewField("captured_at").Time().Filterable().Sortable(),
-	flop.NewField("processing_time").Duration().Filterable().Sortable(),
-	flop.NewField("provider").String().Filterable().Implicit(),
-	flop.NewField("tenant_id").Ref("t.id").String().Filterable(),
-).MustBuild()
+package main
+
+import (
+	"fmt"
+	"log"
+
+	sq "github.com/Masterminds/squirrel"
+	"github.com/ysomad/flop"
+	"github.com/ysomad/flop/flopsq"
+)
+
+func main() {
+	if err := quickstart(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func quickstart() error {
+	type payment struct{ ID, Amount int64 }
+	schema, err := flop.NewSchema(
+		flop.NewField("id").Int().Unique().Value(func(p payment) any { return p.ID }),
+		flop.NewField("amount").Int().Filterable().Sortable().Value(func(p payment) any { return p.Amount }),
+	).Build()
+	if err != nil {
+		return err
+	}
+	filter, err := schema.ParseFilter("amount >= 100")
+	if err != nil {
+		return err
+	}
+	defaults, err := schema.ParseOrder("amount desc")
+	if err != nil {
+		return err
+	}
+	requested, err := schema.ParseOrder("")
+	if err != nil {
+		return err
+	}
+	order := schema.TotalOrder(flop.MergeOrder(defaults, requested))
+	after, err := schema.DecodeCursor("", order, filter) // First page.
+	if err != nil {
+		return err
+	}
+	base := sq.Select("id", "amount").From("payments").PlaceholderFormat(sq.Dollar)
+	query, err := flopsq.CursorQuery(base, schema, order, filter, after, 2, 0)
+	if err != nil {
+		return err
+	}
+	sql, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
+	fmt.Println(sql, args)
+	// Replace these sample rows with the query result, including its surplus row.
+	rows := []payment{{ID: 1, Amount: 300}, {ID: 2, Amount: 200}, {ID: 3, Amount: 100}}
+	page, err := schema.NewCursorPage(rows, 2, order, filter)
+	if err != nil {
+		return err
+	}
+	fmt.Println(page.Items, page.NextCursor != "")
+	return nil
+}
 ```
 
-A field has a public path clients write, and a backend `Ref` that defaults to it.
+Send `page.NextCursor` to `DecodeCursor` on the next request with the same
+order and filter. Page size may change. See [the shop example](examples/shop)
+for database execution and HTTP handlers.
 
-| declaration | meaning |
-| --- | --- |
-| `Filterable()` | may be named in a filter |
-| `Sortable()` | may be named in an `order_by` |
-| `Unique()` | tie-breaker for cursor paging; implies `Sortable()`, at most one per schema |
-| `Implicit()` | a bare filter value searches this field; implies `Filterable()`, string fields only |
-| `Value(fn)` | how a row supplies this field to a cursor |
+## Contracts
 
-## Filtering
+- Public field paths consist of segments passed to `NewField`; no segment may
+  begin with an ASCII digit. `field1` is valid. `Ref` defaults to the path and
+  must be a trusted backend reference: adapters embed it directly in SQL.
+- `Filterable` and `Sortable` allow client use. `Implicit` searches string
+  fields with bare values. `Unique` declares a single-field key and implies
+  `Sortable`. For a composite key, declare sortable fields and use
+  `NewSchema(...).CompositeKey("id", "created_at")`. It requires at least two
+  distinct fields and cannot be combined with `Unique()`. Key fields follow
+  the order of the arguments.
+  Cursor orders require every key field, non-null columns, and a `Value`
+  accessor for every ordering field. Nil callbacks are declaration errors.
+- `ParseOrder` parses and validates. Apply `TotalOrder(MergeOrder(defaults, requested))`
+  explicitly. Requested terms win; unused defaults precede missing unique-key
+  fields. Explicit key-field placement is preserved. Repeated orders fail at
+  query and cursor boundaries.
+- Cursors retain version 1 and support `bool`, `int64`, `uint64`, `float64`,
+  `string`, `[]byte`, `time.Time`, and `time.Duration`. Nulls, non-finite floats,
+  zero times and unsupported types are rejected. Bindings detect changed orders
+  and filters; they are **not authentication**. Tokens are unsigned, so enforce
+  authorization independently.
+- Page sizes must be positive. `CursorQuery` fetches one surplus row;
+  `NewCursorPage` trims it and encodes the last retained row. For page numbers,
+  use `OffsetQuery` and `NewOffsetPage`; zero selects page one. Count with the
+  same filter to obtain filtered totals.
 
-[AIP-160](https://google.aip.dev/160),
-[grammar](https://google.aip.dev/assets/misc/ebnf-filtering.txt)
+## Syntax
 
-```go
-filter, err := payments.ParseFilter(r.FormValue("filter"))
-```
+Ordering is `amount desc, id`: ascending is the default, with no `asc` suffix.
+Use backticks for unusual order path segments, doubling embedded backticks.
 
-```
-filter: amount >= 1000 AND provider = "stripe"
-sql:    ((amount >= @amount_1) AND (provider = @provider_2))
-args:   amount_1=1000 provider_2=stripe
-```
-
-| type | operators |
+| Filter field type | Operators |
 | --- | --- |
 | string | `=` `!=` `:` |
 | int, float, time, duration | `=` `!=` `<` `<=` `>` `>=` |
 | bool | `=` `!=` |
 
-`time` takes quoted RFC 3339, `duration` takes Go syntax (`250ms`, `2h30m`). A
-`*` in a string argument makes it a `LIKE` pattern, `null` becomes `IS NULL`.
+Filters support parentheses, `AND`, `OR`, `NOT`, unary `-`, and implicit AND
+between terms. As in AIP-160, **OR binds more tightly than AND**. Functions and
+collection membership are not supported. Both quote styles accept arbitrary
+length strings and Go character escapes, plus escaped quotes and `\*`.
+Numbers and booleans must be unquoted; timestamps must be quoted RFC 3339, such
+as `created_at >= "2024-01-01T00:00:00Z"`. Durations use Go syntax (`250ms`).
 
-## Ordering
+`:` searches for a substring. `*` in a string argument becomes a LIKE wildcard;
+`%`, `_`, and backslashes are escaped. Escaping `*` does not make it literal.
+Unquoted `null` supports only `=` and `!=`.
 
-[AIP-132](https://google.aip.dev/132)
+## Adapters and errors
 
-```go
-order, err := payments.ParseOrder(r.FormValue("order_by"))
-order = payments.TotalOrder(flop.MergeOrder(defaultOrder, order))
+`CompileFilter` and `CompileSeek` produce `And`, `Or`, `Not`, and `Cmp` values.
+`ValidateExpr` checks manually constructed trees; nil roots match everything,
+while nil nested operands, empty groups and pointer nodes are invalid.
+
+Use one `rawsql.Builder` per query so named arguments stay unique. Its `Args()`
+returns a copy suitable for `pgx.NamedArgs`. `flopsq` preserves Squirrel's
+placeholder format and provides `Query`, `OffsetQuery`, and `CursorQuery`.
+
+Use `errors.Is` with `ErrInvalidFilter`, `ErrInvalidOrder`, `ErrInvalidCursor`,
+`ErrCursorMismatch`, `ErrInvalidPageSize`, `ErrInvalidPage`, or `ErrInvalidSkip`
+for request errors. `ErrDeclaration` identifies schema, accessor or expression
+setup mistakes.
+
+## Tests
+
+Run `go build ./...`, `go vet ./...`, and `go test -race ./...` in each of `.`,
+`flopsq`, and `examples/shop`. Ordinary tests do not require Docker.
+
+PostgreSQL integration tests live only in `flopsq`. With Docker running:
+
+```sh
+cd flopsq
+go test -race -tags=integration -count=1 ./...
 ```
 
-```
-order_by: captured_at desc, amount
-sql:      captured_at DESC, amount, id
-```
-
-Ascending unless followed by `desc`; the unique field is appended to make the
-order total.
-
-## Cursor pagination
-
-[AIP-158](https://google.aip.dev/158)
-
-```go
-after, err := payments.DecodeCursor(req.Cursor, order, filter)
-
-q, err := flopsq.CursorQuery(base, payments, order, filter, after, size, req.Skip)
-rows := query(q)
-
-page, err := payments.CursorPage(rows, size, order, filter)
-// page.Items, page.NextCursor
-```
-
-## Page-number pagination
-
-```go
-offset, err := flop.Offset(req.Page, size)
-q, err := flopsq.OffsetQuery(base, payments, order, filter, req.Page, size)
-
-page, err := flop.NewOffsetPage(items, req.Page, size, total)
-// page.Items, page.Page, page.TotalPages, page.TotalItems
-```
-
-## Backends
-
-`Schema.Compile` and `Schema.CompileSeek` turn a filter and a cursor position
-into a tree of `And`, `Or`, `Not` and `Cmp` a backend walks.
-
-**flopsq** builds squirrel expressions:
-
-```go
-base := psql.Select("id", "amount").From("payments").
-	Where(squirrel.Eq{"tenant_id": req.Tenant})
-
-q, err := flopsq.CursorQuery(base, payments, order, filter, after, size, skip)
-```
-
-**rawsql** renders keyword-less SQL fragments and named arguments; use one
-`Builder` per query. An empty filter or a first page renders as `""`:
-
-```go
-b := rawsql.NewBuilder()
-where, err := b.Where(payments, filter)
-seek, err := b.Seek(payments, order, after)
-orderBy, err := rawsql.OrderBy(payments, order)
-
-sql := "SELECT id, amount FROM payments WHERE tenant_id = @tenant"
-if where != "" {
-	sql += " AND " + where
-}
-if seek != "" {
-	sql += " AND " + seek
-}
-sql += " ORDER BY " + orderBy
-
-args := b.Args()
-args["tenant"] = req.Tenant
-
-rows, err := db.Query(ctx, sql, pgx.NamedArgs(args))
-```
+Testcontainers starts `postgres:17-alpine` on a dynamic port and cleans it up.
+Container startup failures fail the run. CI runs this suite on a Docker-enabled
+Ubuntu runner.
 
 ## Credits
 
-- [luci-go](https://github.com/luci/luci-go)
-- [Einride AIP Go implementation](https://github.com/einride/aip-go)
-- [Google AIP-132: Ordering](https://google.aip.dev/132)
-- [Google AIP-158: Pagination](https://google.aip.dev/158)
-- [Google AIP-160: Filtering](https://google.aip.dev/160)
-- [AIP-160 filtering EBNF](https://google.aip.dev/assets/misc/ebnf-filtering.txt)
-- [GitLab pagination guidelines](https://docs.gitlab.com/development/database/pagination_guidelines/)
+Parser code derives from [luci-go](https://github.com/luci/luci-go); see [NOTICE](NOTICE).
+The APIs follow [AIP-132](https://google.aip.dev/132),
+[AIP-158](https://google.aip.dev/158), and [AIP-160](https://google.aip.dev/160).

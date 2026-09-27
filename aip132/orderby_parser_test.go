@@ -125,7 +125,36 @@ func TestParseOrderBy(t *testing.T) {
 	}
 }
 
-func TestFieldPath(t *testing.T) {
+func TestNewFieldPath(t *testing.T) {
+	t.Parallel()
+	type args struct {
+		segments []string
+	}
+	tests := []struct {
+		name string
+		args args
+		want []string
+	}{
+		{name: "single", args: args{segments: []string{"name"}}, want: []string{"name"}},
+		{name: "nested", args: args{segments: []string{"user", "name"}}, want: []string{"user", "name"}},
+		{name: "quoted", args: args{segments: []string{"metadata", "odd name"}}, want: []string{"metadata", "odd name"}},
+		{name: "escaped backtick", args: args{segments: []string{"a`b"}}, want: []string{"a`b"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			// The path is taken over the segments, so a caller changing them
+			// afterwards cannot reach it.
+			segments := append([]string{}, test.args.segments...)
+			path := aip132.NewFieldPath(segments...)
+			segments[0] = "changed"
+			assert.Equal(t, test.want, path.Segments())
+		})
+	}
+}
+
+func TestFieldPath_String(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
@@ -136,15 +165,74 @@ func TestFieldPath(t *testing.T) {
 		{name: "nested", segments: []string{"user", "name"}, want: "user.name"},
 		{name: "quoted", segments: []string{"metadata", "odd name"}, want: "metadata.`odd name`"},
 		{name: "escaped backtick", segments: []string{"a`b"}, want: "`a``b`"},
+		{name: "dot inside a segment", segments: []string{"outer", "odd.name"}, want: "outer.`odd.name`"},
 	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, aip132.NewFieldPath(test.segments...).String())
+		})
+	}
+}
+
+func TestFieldPath_Segments(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		segments []string
+		want     []string
+	}{
+		{name: "single", segments: []string{"name"}, want: []string{"name"}},
+		{name: "nested", segments: []string{"user", "name"}, want: []string{"user", "name"}},
+		{name: "quoted", segments: []string{"metadata", "odd name"}, want: []string{"metadata", "odd name"}},
+		{name: "escaped backtick", segments: []string{"a`b"}, want: []string{"a`b"}},
+	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			path := aip132.NewFieldPath(test.segments...)
-			assert.Equal(t, test.want, path.String())
-			assert.Equal(t, test.segments, path.GetSegments())
-			assert.True(t, path.Equals(aip132.NewFieldPath(test.segments...)))
-			assert.False(t, path.Equals(aip132.NewFieldPath("other")))
+			// What is handed back is a copy, so writing to it changes nothing.
+			path.Segments()[0] = "changed"
+			assert.Equal(t, test.want, path.Segments())
+		})
+	}
+}
+
+func TestFieldPath_Equals(t *testing.T) {
+	t.Parallel()
+	type args struct {
+		other aip132.FieldPath
+	}
+	tests := []struct {
+		name     string
+		segments []string
+		args     args
+		want     bool
+	}{
+		{name: "single", segments: []string{"name"}, args: args{other: aip132.NewFieldPath("name")}, want: true},
+		{
+			name:     "nested",
+			segments: []string{"user", "name"},
+			args:     args{other: aip132.NewFieldPath("user", "name")},
+			want:     true,
+		},
+		{
+			name:     "quoted",
+			segments: []string{"metadata", "odd name"},
+			args:     args{other: aip132.NewFieldPath("metadata", "odd name")},
+			want:     true,
+		},
+		{name: "escaped backtick", segments: []string{"a`b"}, args: args{other: aip132.NewFieldPath("a`b")}, want: true},
+		{name: "another path", segments: []string{"name"}, args: args{other: aip132.NewFieldPath("other")}},
+		{name: "prefix", segments: []string{"user", "name"}, args: args{other: aip132.NewFieldPath("user")}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, aip132.NewFieldPath(test.segments...).Equals(test.args.other))
 		})
 	}
 }

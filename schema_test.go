@@ -7,17 +7,36 @@ import (
 	"github.com/ysomad/flop/internal/assert"
 )
 
+func TestNewSchema(t *testing.T) {
+	t.Parallel()
+	segments := []string{"profile", "name"}
+	field := NewField(segments...).String().Filterable().Sortable().Value(func(row string) any { return row })
+	fields := []*FieldBuilder{field}
+	builder := NewSchema(fields...)
+
+	// A caller changing what it passed in afterwards cannot reach the builder.
+	segments[0] = "changed"
+	fields[0] = nil
+	schema := builder.MustBuild()
+	assert.Equal(t, "profile.name", schema.Fields()[0].Ref())
+
+	// The field builder itself stays live, so a later declaration is picked up.
+	field.Ref("other").Int().Value(func(row int64) any { return row })
+	assert.Equal(t, "other", builder.MustBuild().Fields()[0].Ref())
+}
+
 func TestSchemaBuilder_Build(t *testing.T) {
 	t.Parallel()
 	type args struct {
 		fields []*FieldBuilder
 	}
 	tests := []struct {
-		name       string
-		args       args
-		wantUnique string
-		wantRef    string
-		wantErr    assert.ErrorFunc
+		name         string
+		args         args
+		wantUnique   string
+		wantRef      string
+		wantSentinel error
+		wantErr      assert.ErrorFunc
 	}{
 		{
 			name: "every capability",
@@ -100,6 +119,49 @@ func TestSchemaBuilder_Build(t *testing.T) {
 			}},
 			wantErr: assert.Error,
 		},
+
+		{
+			name:         "nil callback",
+			args:         args{fields: []*FieldBuilder{NewField("id").String().Unique().Value[string](nil)}},
+			wantSentinel: ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "digit leading path",
+			args:         args{fields: []*FieldBuilder{NewField("1field").String()}},
+			wantSentinel: ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "digit only path",
+			args:         args{fields: []*FieldBuilder{NewField("9").Int()}},
+			wantSentinel: ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "quoted segment",
+			args:         args{fields: []*FieldBuilder{NewField("1 field").String()}},
+			wantSentinel: ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "nested digit leading segment",
+			args:         args{fields: []*FieldBuilder{NewField("outer", "2inner").String()}},
+			wantSentinel: ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			// A safe reference does not excuse the path clients name.
+			name:         "digit leading path with an explicit reference",
+			args:         args{fields: []*FieldBuilder{NewField("3field").Ref("safe_column").String()}},
+			wantSentinel: ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{name: "trailing digit", args: args{fields: []*FieldBuilder{NewField("field1").String()}}, wantErr: assert.NoError},
+		{name: "underscore leading", args: args{fields: []*FieldBuilder{NewField("_1field").String()}}, wantErr: assert.NoError},
+		{name: "unicode path", args: args{fields: []*FieldBuilder{NewField("世界").String()}}, wantErr: assert.NoError},
+		{name: "dot inside a segment", args: args{fields: []*FieldBuilder{NewField("odd.name").String()}}, wantErr: assert.NoError},
+		{name: "unicode digit", args: args{fields: []*FieldBuilder{NewField("９field").String()}}, wantErr: assert.NoError},
 	}
 
 	for _, test := range tests {
@@ -108,6 +170,9 @@ func TestSchemaBuilder_Build(t *testing.T) {
 			got, gotErr := NewSchema(test.args.fields...).Build()
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
 				return
 			}
 			assert.Equal(t, len(test.args.fields), len(got.Fields()))
@@ -132,6 +197,97 @@ func TestSchemaBuilder_MustBuild(t *testing.T) {
 	assert.Equal(t, 1, len(s.Fields()))
 }
 
+func TestSchemaBuilder_CompositeKey(t *testing.T) {
+	t.Parallel()
+	type args struct {
+		paths []string
+	}
+	tests := []struct {
+		name    string
+		fields  []*FieldBuilder
+		args    args
+		wantErr assert.ErrorFunc
+	}{
+		{name: "composite", args: args{paths: []string{"id", "created_at"}}, wantErr: assert.NoError},
+		{name: "key order", args: args{paths: []string{"created_at", "id"}}, wantErr: assert.NoError},
+		{name: "single field", args: args{paths: []string{"id"}}, wantErr: assert.Error},
+		{name: "empty", args: args{}, wantErr: assert.Error},
+		{name: "duplicate", args: args{paths: []string{"id", "id"}}, wantErr: assert.Error},
+		{name: "undeclared", args: args{paths: []string{"id", "missing"}}, wantErr: assert.Error},
+		{
+			name: "nested public path",
+			args: args{paths: []string{"user.id", "created_at"}},
+			fields: []*FieldBuilder{
+				NewField("user", "id").Ref("u.id").String().Sortable(),
+				NewField("created_at").Time().Sortable(),
+			},
+			wantErr: assert.NoError,
+		},
+		{
+			name: "backend ref is not a public path",
+			args: args{paths: []string{"u.id", "created_at"}},
+			fields: []*FieldBuilder{
+				NewField("id").Ref("u.id").String().Sortable(),
+				NewField("created_at").Time().Sortable(),
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "not sortable",
+			args: args{paths: []string{"id", "created_at"}},
+			fields: []*FieldBuilder{
+				NewField("id").String(),
+				NewField("created_at").Time().Sortable(),
+			},
+			wantErr: assert.Error,
+		},
+		{
+			name: "conflicting declaration",
+			args: args{paths: []string{"id", "created_at"}},
+			fields: []*FieldBuilder{
+				NewField("id").String().Unique(),
+				NewField("created_at").Time().Sortable(),
+			},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			fields := test.fields
+			if fields == nil {
+				fields = []*FieldBuilder{NewField("id").String().Sortable(), NewField("created_at").Time().Sortable()}
+			}
+			schema, err := NewSchema(fields...).CompositeKey(test.args.paths...).Build()
+			test.wantErr(t, err)
+			if err != nil {
+				assert.IsError(t, err, ErrDeclaration)
+				return
+			}
+			assert.Equal(t, len(test.args.paths), len(schema.UniqueFields()))
+			for i, field := range schema.UniqueFields() {
+				assert.Equal(t, test.args.paths[i], field.Path().String())
+			}
+			assert.Equal(t, (*Field)(nil), schema.UniqueField())
+		})
+	}
+
+	// The key is snapshotted, and the same builder can be keyed again.
+	paths := []string{"id", "created_at"}
+	builder := NewSchema(
+		NewField("id").String().Sortable(),
+		NewField("created_at").Time().Sortable(),
+	).CompositeKey(paths...)
+	paths[0] = "created_at"
+	schema := builder.MustBuild()
+	reordered := builder.CompositeKey("created_at", "id").MustBuild()
+	assert.Equal(t, "created_at", reordered.UniqueFields()[0].Path().String())
+	assert.Equal(t, "id", reordered.UniqueFields()[1].Path().String())
+	assert.Equal(t, "id", schema.UniqueFields()[0].Path().String())
+	assert.Equal(t, "created_at", schema.UniqueFields()[1].Path().String())
+}
+
 // testSchema declares one field per capability, so a lookup row can name the
 // field it expects to be refused by.
 func testSchema(t *testing.T) *Schema {
@@ -147,6 +303,27 @@ func testSchema(t *testing.T) *Schema {
 	).Build()
 	assert.NoError(t, err)
 	return s
+}
+
+func TestSchema_Fields(t *testing.T) {
+	t.Parallel()
+	schema := NewSchema(NewField("profile", "name").String().Filterable()).MustBuild()
+	fields := schema.Fields()
+	fields[0] = nil
+	schema.Fields()[0].Path().Segments()[0] = "changed"
+	assert.Equal(t, 1, len(schema.Fields()))
+	assert.Equal(t, []string{"profile", "name"}, schema.Fields()[0].Path().Segments())
+}
+
+func TestSchema_UniqueFields(t *testing.T) {
+	t.Parallel()
+	schema := NewSchema(
+		NewField("id").String().Sortable(),
+		NewField("created_at").Time().Sortable(),
+	).CompositeKey("id", "created_at").MustBuild()
+	schema.UniqueFields()[0] = nil
+	assert.Equal(t, "id", schema.UniqueFields()[0].Path().String())
+	assert.Equal(t, "created_at", schema.UniqueFields()[1].Path().String())
 }
 
 func TestSchema_FilterableField(t *testing.T) {
@@ -240,14 +417,105 @@ func TestSchema_SortableField(t *testing.T) {
 	}
 }
 
-func TestField_accessors(t *testing.T) {
+func TestSchema_SortableFields(t *testing.T) {
 	t.Parallel()
-	field := &NewField("metadata", "tags").Ref("m.tags").String().field
-	assert.Equal(t, aip132.NewFieldPath("metadata", "tags"), field.Path())
-	assert.Equal(t, "m.tags", field.Ref())
+	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
+	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
+
+	type args struct {
+		order []aip132.OrderBy
+	}
+	tests := []struct {
+		name         string
+		args         args
+		wantRefs     []string
+		wantSentinel error
+		wantErr      assert.ErrorFunc
+	}{
+		{name: "empty order", args: args{}, wantRefs: []string{}, wantErr: assert.NoError},
+		{
+			name:     "every clause",
+			args:     args{order: []aip132.OrderBy{createdAt, id}},
+			wantRefs: []string{"u.created_at", "u.id"},
+			wantErr:  assert.NoError,
+		},
+		{
+			name:         "repeated field",
+			args:         args{order: []aip132.OrderBy{id, id}},
+			wantSentinel: ErrInvalidOrder,
+			wantErr:      assert.Error,
+		},
+		{
+			name:    "not sortable",
+			args:    args{order: []aip132.OrderBy{{FieldPath: aip132.NewFieldPath("active")}}},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, gotErr := testSchema(t).SortableFields(test.args.order)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
+				return
+			}
+			refs := make([]string, 0, len(got))
+			for _, field := range got {
+				refs = append(refs, field.Ref())
+			}
+			assert.Equal(t, test.wantRefs, refs)
+		})
+	}
 }
 
-func TestFieldType_String(t *testing.T) {
+func TestField_Path(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		field *FieldBuilder
+		want  aip132.FieldPath
+	}{
+		{name: "single segment", field: NewField("id").Int(), want: aip132.NewFieldPath("id")},
+		{
+			name:  "multi segment",
+			field: NewField("metadata", "tags").Ref("m.tags").String(),
+			want:  aip132.NewFieldPath("metadata", "tags"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, test.field.field.Path())
+		})
+	}
+}
+
+func TestField_Ref(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		field *FieldBuilder
+		want  string
+	}{
+		{name: "explicit", field: NewField("metadata", "tags").Ref("m.tags").String(), want: "m.tags"},
+		{name: "falls back to the path", field: NewField("metadata", "tags").String(), want: "metadata.tags"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			schema := NewSchema(test.field).MustBuild()
+			assert.Equal(t, test.want, schema.Fields()[0].Ref())
+		})
+	}
+}
+
+func Test_fieldType_String(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/internal/assert"
 )
 
@@ -48,13 +49,236 @@ func renderValue(v any) string {
 	return fmt.Sprintf("%v", v)
 }
 
+// filterSchema declares the fields the filter rows name, including the spare
+// ordered fields a row needs to compare four operators at once.
+func filterSchema(t *testing.T) *Schema {
+	t.Helper()
+	s, err := NewSchema(
+		NewField("id").Ref("u.id").Int().Unique(),
+		NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit(),
+		NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable(),
+		NewField("latency").Ref("u.latency").Duration().Filterable().Sortable(),
+		NewField("active").Ref("u.active").Bool().Filterable(),
+		NewField("rating").Ref("u.rating").Float().Filterable(),
+		NewField("age").Ref("u.age").Int().Filterable(),
+		NewField("age2").Ref("u.age2").Int().Filterable(),
+		NewField("age3").Ref("u.age3").Int().Filterable(),
+		NewField("age4").Ref("u.age4").Int().Filterable(),
+		NewField("secret").Ref("u.secret").String(),
+		NewField("metadata", "tags").Ref("m.tags").String().Filterable(),
+	).Build()
+	assert.NoError(t, err)
+	return s
+}
+
+// malformedFilter is an AST no parser produces, so both the compiler and the
+// validator have to refuse it.
+type malformedFilter struct {
+	name   string
+	filter *aip160.Filter
+}
+
+func malformedFilters() []malformedFilter {
+	member := aip160.Member{Value: aip160.Value{Value: "display_name"}}
+	valid := aip160.Term{Simple: aip160.Simple{Restriction: &aip160.Restriction{Member: member}}}
+	expression := func(term aip160.Term) *aip160.Expression {
+		return &aip160.Expression{Sequences: []aip160.Sequence{{Factors: []aip160.Factor{{Terms: []aip160.Term{term}}}}}}
+	}
+	filter := func(e *aip160.Expression) *aip160.Filter { return &aip160.Filter{Expression: e} }
+	restriction := func(r *aip160.Restriction) *aip160.Filter {
+		return filter(expression(aip160.Term{Simple: aip160.Simple{Restriction: r}}))
+	}
+	return []malformedFilter{
+		{name: "empty expression", filter: filter(&aip160.Expression{})},
+		{
+			name:   "empty sequence beside valid",
+			filter: filter(&aip160.Expression{Sequences: append(expression(valid).Sequences, aip160.Sequence{})}),
+		},
+		{
+			name:   "empty factor",
+			filter: filter(&aip160.Expression{Sequences: []aip160.Sequence{{Factors: []aip160.Factor{{}}}}}),
+		},
+		{name: "empty term", filter: filter(expression(aip160.Term{}))},
+		{
+			name: "both simple alternatives",
+			filter: filter(expression(aip160.Term{Simple: aip160.Simple{
+				Restriction: valid.Simple.Restriction,
+				Composite:   expression(valid),
+			}})),
+		},
+		{name: "missing argument", filter: restriction(&aip160.Restriction{Member: member, Comparator: "="})},
+		{
+			name:   "argument without comparator",
+			filter: restriction(&aip160.Restriction{Member: member, Arg: &aip160.Arg{Member: member}}),
+		},
+		{name: "missing member", filter: restriction(&aip160.Restriction{})},
+		{
+			name:   "missing argument member",
+			filter: restriction(&aip160.Restriction{Member: member, Comparator: "=", Arg: &aip160.Arg{}}),
+		},
+		{
+			name:   "empty member segment",
+			filter: restriction(&aip160.Restriction{Member: aip160.Member{Value: member.Value, Fields: []aip160.Value{{}}}}),
+		},
+		{
+			name:   "unsupported comparator",
+			filter: restriction(&aip160.Restriction{Member: member, Comparator: "IN", Arg: &aip160.Arg{Member: member}}),
+		},
+		{
+			name: "composite argument",
+			filter: restriction(&aip160.Restriction{
+				Member:     member,
+				Comparator: "=",
+				Arg:        &aip160.Arg{Composite: expression(valid)},
+			}),
+		},
+	}
+}
+
 func TestSchema_ParseFilter(t *testing.T) {
 	t.Parallel()
 	type args struct {
 		text string
 	}
 	tests := []struct {
+		name         string
+		schema       *Schema
+		args         args
+		want         string
+		wantContains string
+		wantSentinel error
+		wantErr      assert.ErrorFunc
+	}{
+		{name: "empty", args: args{text: ""}, want: "filter{}", wantErr: assert.NoError},
+		{name: "blank", args: args{text: "  "}, want: "filter{}", wantErr: assert.NoError},
+		{
+			name: "restriction",
+			args: args{text: `display_name = "bob"`},
+			want: `filter{expression{sequence{factor{term{simple{restriction{member{value{"display_name"}},` +
+				`"=",arg{member{value{quoted,"bob"}}}}}}}}}}`,
+			wantErr: assert.NoError,
+		},
+		{
+			name:    "implicit search",
+			args:    args{text: "bob"},
+			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"bob"}}}}}}}}}`,
+			wantErr: assert.NoError,
+		},
+
+		{
+			name: "no implicit field to search",
+			schema: NewSchema(
+				NewField("name").Ref("u.name").String().Filterable(),
+			).MustBuild(),
+			args:    args{text: "bob"},
+			wantErr: assert.Error,
+		},
+		{name: "undeclared field", args: args{text: "nope = 1"}, wantErr: assert.Error},
+		{name: "declared but not filterable", args: args{text: `secret = "x"`}, wantErr: assert.Error},
+		{name: "syntax error", args: args{text: "a = "}, wantErr: assert.Error},
+		{name: "has on an int", args: args{text: "age:30"}, wantErr: assert.Error},
+		{name: "ordering on a string", args: args{text: `display_name < "bob"`}, wantErr: assert.Error},
+		{name: "ordering on a bool", args: args{text: "active > true"}, wantErr: assert.Error},
+		{name: "int takes no text", args: args{text: "age = old"}, wantErr: assert.Error},
+		{name: "int takes no quoted number", args: args{text: `age = "30"`}, wantErr: assert.Error},
+		{name: "int overflow", args: args{text: "age = 18446744073709551616"}, wantErr: assert.Error},
+		{name: "float takes no text", args: args{text: "rating = high"}, wantErr: assert.Error},
+		{name: "float is finite", args: args{text: "rating = Inf"}, wantErr: assert.Error},
+		{name: "bool is case sensitive", args: args{text: "active = TRUE"}, wantErr: assert.Error},
+		{name: "bool takes no quoted literal", args: args{text: `active = "true"`}, wantErr: assert.Error},
+		{name: "time is rfc 3339", args: args{text: `created_at > "yesterday"`}, wantErr: assert.Error},
+		{name: "duration needs a unit", args: args{text: "latency = 250"}, wantErr: assert.Error},
+		{name: "duration rejects text", args: args{text: "latency = later"}, wantErr: assert.Error},
+		{name: "duration has no day unit", args: args{text: "latency = 1d"}, wantErr: assert.Error},
+		{
+			name:    "duration overflow",
+			args:    args{text: "latency = 999999999999999999999999h"},
+			wantErr: assert.Error,
+		},
+		{name: "has on a duration", args: args{text: "latency:1s"}, wantErr: assert.Error},
+		{name: "duration null is not ordered", args: args{text: "latency > null"}, wantErr: assert.Error},
+		{name: "null is not ordered", args: args{text: "created_at > null"}, wantErr: assert.Error},
+		{name: "composite argument", args: args{text: "age = (1 OR 2)"}, wantErr: assert.Error},
+		{
+			// Rejecting a wildcard has to reach numeric coercion, not stop at
+			// the pattern the wildcard implies.
+			name:         "wildcard against a non string field",
+			args:         args{text: "rating = 5*"},
+			wantContains: "takes a number",
+			wantSentinel: ErrInvalidFilter,
+			wantErr:      assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			s := test.schema
+			if s == nil {
+				s = filterSchema(t)
+			}
+			got, gotErr := s.ParseFilter(test.args.text)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
+				if test.wantContains != "" && !strings.Contains(gotErr.Error(), test.wantContains) {
+					t.Fatalf("error %q does not mention %q", gotErr, test.wantContains)
+				}
+				return
+			}
+			assert.Equal(t, test.want, got.String())
+		})
+	}
+}
+
+func TestSchema_ValidateFilter(t *testing.T) {
+	t.Parallel()
+	schema := testSchema(t)
+	valid, err := schema.ParseFilter(`display_name = "bob"`)
+	assert.NoError(t, err)
+
+	type args struct {
+		filter *aip160.Filter
+	}
+	tests := []struct {
 		name    string
+		args    args
+		wantErr assert.ErrorFunc
+	}{
+		{name: "nil filter", args: args{}, wantErr: assert.NoError},
+		{name: "parsed filter", args: args{filter: valid}, wantErr: assert.NoError},
+	}
+	for _, malformed := range malformedFilters() {
+		tests = append(tests, struct {
+			name    string
+			args    args
+			wantErr assert.ErrorFunc
+		}{name: malformed.name, args: args{filter: malformed.filter}, wantErr: assert.Error})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			gotErr := schema.ValidateFilter(test.args.filter)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				assert.IsError(t, gotErr, ErrInvalidFilter)
+			}
+		})
+	}
+}
+
+func TestSchema_CompileFilter(t *testing.T) {
+	t.Parallel()
+	type args struct {
+		text   string
+		filter *aip160.Filter
+	}
+	tests := []struct {
+		name    string
+		schema  *Schema
 		args    args
 		want    string
 		wantErr assert.ErrorFunc
@@ -143,11 +367,6 @@ func TestSchema_ParseFilter(t *testing.T) {
 			args:    args{text: `"bo*"`},
 			want:    `u.name LIKE "bo%"`,
 			wantErr: assert.NoError,
-		},
-		{
-			name:    "wildcard against a non string field",
-			args:    args{text: `total = 5*`},
-			wantErr: assert.Error,
 		},
 		{
 			name:    "multi segment path",
@@ -288,91 +507,12 @@ func TestSchema_ParseFilter(t *testing.T) {
 			want:    `u.name LIKE "%50\\%%"`,
 			wantErr: assert.NoError,
 		},
-
-		{name: "undeclared field", args: args{text: "nope = 1"}, wantErr: assert.Error},
-		{name: "declared but not filterable", args: args{text: `secret = "x"`}, wantErr: assert.Error},
 		{
 			name:    "not sortable is still filterable",
 			args:    args{text: "active = true"},
 			want:    "u.active = true",
 			wantErr: assert.NoError,
 		},
-		{name: "syntax error", args: args{text: "a = "}, wantErr: assert.Error},
-		{name: "has on an int", args: args{text: "age:30"}, wantErr: assert.Error},
-		{name: "ordering on a string", args: args{text: `display_name < "bob"`}, wantErr: assert.Error},
-		{name: "ordering on a bool", args: args{text: "active > true"}, wantErr: assert.Error},
-		{name: "int takes no text", args: args{text: "age = old"}, wantErr: assert.Error},
-		{name: "int takes no quoted number", args: args{text: `age = "30"`}, wantErr: assert.Error},
-		{name: "int overflow", args: args{text: "age = 18446744073709551616"}, wantErr: assert.Error},
-		{name: "float takes no text", args: args{text: "rating = high"}, wantErr: assert.Error},
-		{name: "float is finite", args: args{text: "rating = Inf"}, wantErr: assert.Error},
-		{name: "bool is case sensitive", args: args{text: "active = TRUE"}, wantErr: assert.Error},
-		{name: "bool takes no quoted literal", args: args{text: `active = "true"`}, wantErr: assert.Error},
-		{name: "time is rfc 3339", args: args{text: `created_at > "yesterday"`}, wantErr: assert.Error},
-		{name: "duration needs a unit", args: args{text: "latency = 250"}, wantErr: assert.Error},
-		{name: "duration rejects text", args: args{text: "latency = later"}, wantErr: assert.Error},
-		{name: "duration has no day unit", args: args{text: "latency = 1d"}, wantErr: assert.Error},
-		{
-			name:    "duration overflow",
-			args:    args{text: "latency = 999999999999999999999999h"},
-			wantErr: assert.Error,
-		},
-		{name: "has on a duration", args: args{text: "latency:1s"}, wantErr: assert.Error},
-		{name: "duration null is not ordered", args: args{text: "latency > null"}, wantErr: assert.Error},
-		{name: "null is not ordered", args: args{text: "created_at > null"}, wantErr: assert.Error},
-		{name: "composite argument", args: args{text: "age = (1 OR 2)"}, wantErr: assert.Error},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			s := filterSchema(t)
-			filter, gotErr := s.ParseFilter(test.args.text)
-			test.wantErr(t, gotErr)
-			if gotErr != nil {
-				return
-			}
-			expr, err := s.Compile(filter)
-			assert.NoError(t, err)
-			assert.Equal(t, test.want, renderExpr(expr))
-		})
-	}
-}
-
-// filterSchema declares the fields the filter rows above name, including the
-// spare ordered fields a row needs to compare four operators at once.
-func filterSchema(t *testing.T) *Schema {
-	t.Helper()
-	s, err := NewSchema(
-		NewField("id").Ref("u.id").Int().Unique(),
-		NewField("display_name").Ref("u.name").String().Filterable().Sortable().Implicit(),
-		NewField("created_at").Ref("u.created_at").Time().Filterable().Sortable(),
-		NewField("latency").Ref("u.latency").Duration().Filterable().Sortable(),
-		NewField("active").Ref("u.active").Bool().Filterable(),
-		NewField("rating").Ref("u.rating").Float().Filterable(),
-		NewField("age").Ref("u.age").Int().Filterable(),
-		NewField("age2").Ref("u.age2").Int().Filterable(),
-		NewField("age3").Ref("u.age3").Int().Filterable(),
-		NewField("age4").Ref("u.age4").Int().Filterable(),
-		NewField("secret").Ref("u.secret").String(),
-		NewField("metadata", "tags").Ref("m.tags").String().Filterable(),
-	).Build()
-	assert.NoError(t, err)
-	return s
-}
-
-func TestSchema_Compile_implicitFields(t *testing.T) {
-	t.Parallel()
-	type args struct {
-		text string
-	}
-	tests := []struct {
-		name    string
-		schema  *Schema
-		args    args
-		want    string
-		wantErr assert.ErrorFunc
-	}{
 		{
 			name: "every implicit field is searched",
 			schema: NewSchema(
@@ -384,27 +524,37 @@ func TestSchema_Compile_implicitFields(t *testing.T) {
 			want:    `(u.name LIKE "%bob%" OR u.email LIKE "%bob%")`,
 			wantErr: assert.NoError,
 		},
-		{
-			name: "no implicit field",
-			schema: NewSchema(
-				NewField("name").Ref("u.name").String().Filterable(),
-			).MustBuild(),
-			args:    args{text: "bob"},
-			wantErr: assert.Error,
-		},
+	}
+	for _, malformed := range malformedFilters() {
+		tests = append(tests, struct {
+			name    string
+			schema  *Schema
+			args    args
+			want    string
+			wantErr assert.ErrorFunc
+		}{name: malformed.name, args: args{filter: malformed.filter}, wantErr: assert.Error})
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			filter, gotErr := test.schema.ParseFilter(test.args.text)
+			s := test.schema
+			if s == nil {
+				s = filterSchema(t)
+			}
+			filter := test.args.filter
+			if filter == nil {
+				parsed, err := s.ParseFilter(test.args.text)
+				assert.NoError(t, err)
+				filter = parsed
+			}
+			got, gotErr := s.CompileFilter(filter)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				assert.IsError(t, gotErr, ErrInvalidFilter)
 				return
 			}
-			expr, err := test.schema.Compile(filter)
-			assert.NoError(t, err)
-			assert.Equal(t, test.want, renderExpr(expr))
+			assert.Equal(t, test.want, renderExpr(got))
 		})
 	}
 }
@@ -430,6 +580,47 @@ func TestOp_String(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			assert.Equal(t, test.want, test.op.String())
+		})
+	}
+}
+
+type unsupportedExpr struct{ Expr }
+
+func TestValidateExpr(t *testing.T) {
+	t.Parallel()
+	field := testSchema(t).Fields()[0]
+	cmp := Cmp{Field: field, Op: OpEq, Value: int64(1)}
+	for _, test := range []struct {
+		name  string
+		expr  Expr
+		valid bool
+	}{
+		{name: "nil root", valid: true},
+		{name: "comparison", expr: cmp, valid: true},
+		{name: "null", expr: Cmp{Field: field, Op: OpNe}, valid: true},
+		{name: "nested", expr: And{Exprs: []Expr{cmp, Or{Exprs: []Expr{Not{Expr: cmp}}}}}, valid: true},
+		{name: "empty and", expr: And{}},
+		{name: "empty or", expr: Or{}},
+		{name: "nil and operand", expr: And{Exprs: []Expr{cmp, nil}}},
+		{name: "nil or operand", expr: Or{Exprs: []Expr{nil}}},
+		{name: "nil not operand", expr: Not{}},
+		{name: "no field", expr: Cmp{Op: OpEq}},
+		{name: "zero field", expr: Cmp{Field: &Field{}, Op: OpEq}},
+		{name: "unknown op", expr: Cmp{Field: field, Op: Op(99), Value: int64(1)}},
+		{name: "null range", expr: Cmp{Field: field, Op: OpGt}},
+		{name: "pointer node", expr: &cmp},
+		{name: "typed nil", expr: (*Cmp)(nil)},
+		{name: "unsupported node", expr: unsupportedExpr{}},
+		{name: "unsupported value", expr: Cmp{Field: field, Op: OpEq, Value: []int{1}}},
+		{name: "non string like", expr: Cmp{Field: field, Op: OpLike, Value: int64(1)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateExpr(test.expr)
+			if test.valid {
+				assert.NoError(t, err)
+			} else {
+				assert.IsError(t, err, ErrDeclaration)
+			}
 		})
 	}
 }
@@ -466,7 +657,7 @@ func FuzzCompile(f *testing.F) {
 		if err != nil {
 			return
 		}
-		expr, err := schema.Compile(filter)
+		expr, err := schema.CompileFilter(filter)
 		if err != nil {
 			t.Fatalf("filter %q validated but did not compile: %v", input, err)
 		}

@@ -65,7 +65,7 @@ var (
 )
 
 // defaultOrder sorts newest first. A client order takes precedence over it,
-// and ParseOrder appends id so that every order is total.
+// and TotalOrder appends missing (id, created_at) key fields after the default.
 var defaultOrder = []aip132.OrderBy{
 	{FieldPath: aip132.NewFieldPath("captured_at"), Descending: true},
 }
@@ -82,18 +82,22 @@ const (
 //	flop.NewField("user_id").Ref("u.id").String().Filterable().Sortable(),
 func mustPaymentSchema() *flop.Schema {
 	return flop.NewSchema(
-		flop.NewField("id").String().Filterable().Unique().
+		flop.NewField("id").String().Filterable().Sortable().
 			Value(func(p payment) any { return p.ID }),
-		flop.NewField("amount").Int().Filterable().Sortable(),
-		flop.NewField("created_at").Time().Filterable(),
+		flop.NewField("amount").Int().Filterable().Sortable().
+			Value(func(p payment) any { return p.Amount }),
+		flop.NewField("created_at").Time().Filterable().Sortable().
+			Value(func(p payment) any { return p.CreatedAt }),
 		flop.NewField("captured_at").
 			Value(func(p payment) any { return p.CapturedAt }).
 			Time().
 			Filterable().
 			Sortable(),
-		flop.NewField("provider").String().Filterable().Sortable().Implicit(),
-		flop.NewField("user_id").String().Filterable().Sortable(),
-	).MustBuild()
+		flop.NewField("provider").String().Filterable().Sortable().Implicit().
+			Value(func(p payment) any { return p.Provider }),
+		flop.NewField("user_id").String().Filterable().Sortable().
+			Value(func(p payment) any { return p.UserID }),
+	).CompositeKey("id", "created_at").MustBuild()
 }
 
 // pageSize clamps what a client asks for. flop takes no view on it: it refuses
@@ -194,7 +198,7 @@ func handleCursorPayments(w http.ResponseWriter, r *http.Request) {
 
 	// The query asked for one row more than the page holds, and that surplus
 	// row is what says another page follows.
-	page, err := paymentSchema.CursorPage(rows, size, order, f)
+	page, err := paymentSchema.NewCursorPage(rows, size, order, f)
 	if err != nil {
 		writeInternalError(w, err)
 		return
@@ -350,9 +354,9 @@ func parseListRequest(req listRequest) ([]aip132.OrderBy, *aip160.Filter, error)
 		return nil, nil, err
 	}
 
-	requested, err := aip132.ParseOrderBy(req.OrderBy)
+	requested, err := paymentSchema.ParseOrder(req.OrderBy)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", flop.ErrInvalidOrder, err)
+		return nil, nil, err
 	}
 
 	// The default fills in the fields the client did not name, and the

@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         go: ['1.27.x', 'stable']
-        module: ['.', 'flopsq']
+        module: ['.', 'flopsq', 'examples/shop']
     defaults:
       run:
         working-directory: ${{ matrix.module }}
@@ -27,6 +27,20 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: flopsq
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.x'
+          cache-dependency-path: flopsq/go.sum
+      - run: go test -race -tags=integration -count=1 ./...
   lint:
     name: lint ${{ matrix.module }}
     runs-on: ubuntu-latest

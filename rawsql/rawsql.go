@@ -7,7 +7,7 @@
 // nothing a client sends reaches the SQL text.
 //
 // Cursor pagination selects pageSize+1 rows: the surplus row is what
-// flop.Trim reads a next page from.
+// [flop.Schema.NewCursorPage] uses to detect a next page.
 //
 // Arguments bind by name, written "@name" and returned as a map. Pass it to a
 // driver that reads names, such as pgx.NamedArgs(args), or hand each entry to
@@ -17,6 +17,7 @@ package rawsql
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,8 @@ const likeEscape = `ESCAPE '\'`
 // functions render a single fragment and count from one, so combining their
 // output would collide on names and bind the wrong values.
 type Builder struct {
-	args map[string]any
+	args    map[string]any
+	nextArg int
 }
 
 // NewBuilder returns a builder with no arguments bound.
@@ -43,13 +45,17 @@ func NewBuilder() *Builder {
 	return &Builder{args: make(map[string]any)}
 }
 
-// Args returns the named arguments of every fragment rendered so far.
-func (b *Builder) Args() map[string]any { return b.args }
+// Args returns a copy of the named arguments rendered so far.
+func (b *Builder) Args() map[string]any { return maps.Clone(b.args) }
 
 // bind records an argument under a name derived from the field it compares and
 // returns the marker that reads it back.
 func (b *Builder) bind(field *flop.Field, value any) string {
-	name := paramName(field, len(b.args)+1)
+	if b.args == nil {
+		b.args = make(map[string]any)
+	}
+	b.nextArg++
+	name := paramName(field, b.nextArg)
 	b.args[name] = value
 	return "@" + name
 }
@@ -64,14 +70,14 @@ func paramName(field *flop.Field, n int) string {
 			return r
 		}
 		return '_'
-	}, strings.Join(field.Path().GetSegments(), "_"))
+	}, strings.Join(field.Path().Segments(), "_"))
 	return name + "_" + strconv.Itoa(n)
 }
 
 // Where renders a filter as a boolean expression, without the WHERE keyword.
 // An empty filter renders as "".
 func (b *Builder) Where(s *flop.Schema, f *aip160.Filter) (string, error) {
-	expr, err := s.Compile(f)
+	expr, err := s.CompileFilter(f)
 	if err != nil {
 		return "", err
 	}
@@ -79,7 +85,11 @@ func (b *Builder) Where(s *flop.Schema, f *aip160.Filter) (string, error) {
 }
 
 // WhereExpr renders an already compiled filter. A nil expression renders as "".
+// Malformed expressions return flop.ErrDeclaration without binding arguments.
 func (b *Builder) WhereExpr(e flop.Expr) (string, error) {
+	if err := flop.ValidateExpr(e); err != nil {
+		return "", err
+	}
 	if e == nil {
 		return "", nil
 	}

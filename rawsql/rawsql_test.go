@@ -1,6 +1,7 @@
 package rawsql_test
 
 import (
+	"regexp"
 	"testing"
 	"time"
 
@@ -199,10 +200,11 @@ func TestOrderBy(t *testing.T) {
 		order []aip132.OrderBy
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr assert.ErrorFunc
+		name         string
+		args         args
+		want         string
+		wantSentinel error
+		wantErr      assert.ErrorFunc
 	}{
 		{name: "empty", args: args{}, want: "", wantErr: assert.NoError},
 		{
@@ -229,6 +231,12 @@ func TestOrderBy(t *testing.T) {
 			args:    args{order: []aip132.OrderBy{activeAsc}},
 			wantErr: assert.Error,
 		},
+		{
+			name:         "repeated field",
+			args:         args{order: []aip132.OrderBy{idAsc, {FieldPath: idAsc.FieldPath, Descending: true}}},
+			wantSentinel: flop.ErrInvalidOrder,
+			wantErr:      assert.Error,
+		},
 	}
 
 	for _, test := range tests {
@@ -237,6 +245,9 @@ func TestOrderBy(t *testing.T) {
 			got, gotErr := rawsql.OrderBy(schema, test.args.order)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
 				return
 			}
 			assert.Equal(t, test.want, got)
@@ -263,11 +274,12 @@ func TestSeek(t *testing.T) {
 		pos   flop.CursorPosition
 	}
 	tests := []struct {
-		name     string
-		args     args
-		want     string
-		wantArgs map[string]any
-		wantErr  assert.ErrorFunc
+		name         string
+		args         args
+		want         string
+		wantArgs     map[string]any
+		wantSentinel error
+		wantErr      assert.ErrorFunc
 	}{
 		{
 			name: "single unique field",
@@ -358,6 +370,12 @@ func TestSeek(t *testing.T) {
 			},
 			wantErr: assert.Error,
 		},
+		{
+			name:         "repeated ordering field",
+			args:         args{order: []aip132.OrderBy{idAsc, idDesc}},
+			wantSentinel: flop.ErrInvalidOrder,
+			wantErr:      assert.Error,
+		},
 	}
 
 	for _, test := range tests {
@@ -366,6 +384,9 @@ func TestSeek(t *testing.T) {
 			got, gotArgs, gotErr := rawsql.Seek(schema, test.args.order, test.args.pos)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
 				return
 			}
 			assert.Equal(t, test.want, got)
@@ -374,9 +395,94 @@ func TestSeek(t *testing.T) {
 	}
 }
 
-// TestBuilder covers what the one-shot functions cannot: a query taking more
-// than one fragment must keep its argument names unique across all of them.
-func TestBuilder(t *testing.T) {
+func TestBuilder_Where(t *testing.T) {
+	t.Parallel()
+	type args struct {
+		filter string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr assert.ErrorFunc
+	}{
+		{name: "no filter", args: args{}, want: "", wantErr: assert.NoError},
+		{
+			name:    "restriction",
+			args:    args{filter: "active = true"},
+			want:    "(u.active = @active_1)",
+			wantErr: assert.NoError,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			filter, err := schema.ParseFilter(test.args.filter)
+			assert.NoError(t, err)
+			got, gotErr := rawsql.NewBuilder().Where(schema, filter)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				return
+			}
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
+func TestBuilder_Seek(t *testing.T) {
+	t.Parallel()
+	createdAtPath := aip132.NewFieldPath("created_at")
+	idPath := aip132.NewFieldPath("id")
+	createdAt := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
+	order, err := schema.ParseOrder("created_at desc")
+	assert.NoError(t, err)
+	order = schema.TotalOrder(order)
+
+	type args struct {
+		order []aip132.OrderBy
+		pos   flop.CursorPosition
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr assert.ErrorFunc
+	}{
+		{
+			name: "mixed directions",
+			args: args{
+				order: order,
+				pos: flop.CursorPosition{
+					{FieldPath: createdAtPath, Value: createdAt},
+					{FieldPath: idPath, Value: int64(7)},
+				},
+			},
+			want: "((u.created_at < @created_at_1)" +
+				" OR ((u.created_at = @created_at_2) AND (u.id > @id_3)))",
+			wantErr: assert.NoError,
+		},
+		{name: "first page", args: args{order: order}, want: "", wantErr: assert.NoError},
+		{name: "no order", args: args{}, wantErr: assert.Error},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, gotErr := rawsql.NewBuilder().Seek(schema, test.args.order, test.args.pos)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				return
+			}
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
+// TestBuilder_Args covers what the one-shot functions cannot: a query taking
+// more than one fragment must keep its argument names unique across all of
+// them, and what Args hands back is a copy.
+func TestBuilder_Args(t *testing.T) {
 	t.Parallel()
 	createdAtPath := aip132.NewFieldPath("created_at")
 	idPath := aip132.NewFieldPath("id")
@@ -385,6 +491,7 @@ func TestBuilder(t *testing.T) {
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
+	order = schema.TotalOrder(order)
 	createdAt := time.Date(2026, time.August, 15, 9, 0, 0, 0, time.UTC)
 	pos := flop.CursorPosition{
 		{FieldPath: createdAtPath, Value: createdAt},
@@ -392,30 +499,34 @@ func TestBuilder(t *testing.T) {
 	}
 
 	b := rawsql.NewBuilder()
-	where, err := b.Where(schema, filter)
+	_, err = b.Where(schema, filter)
 	assert.NoError(t, err)
-	seek, err := b.Seek(schema, order, pos)
+	_, err = b.Seek(schema, order, pos)
 	assert.NoError(t, err)
-
-	assert.Equal(t, "(u.active = @active_1)", where)
-	assert.Equal(
-		t,
-		"((u.created_at < @created_at_2) OR ((u.created_at = @created_at_3) AND (u.id > @id_4)))",
-		seek,
-	)
 	assert.Equal(t, map[string]any{
 		"active_1":     true,
 		"created_at_2": createdAt,
 		"created_at_3": createdAt,
 		"id_4":         int64(7),
 	}, b.Args())
+
+	snapshot := b.Args()
+	delete(snapshot, "active_1")
+	snapshot["created_at_2"] = "corrupt"
+	snapshot["extra"] = true
+	_, err = b.WhereExpr(flop.Cmp{Field: schema.Fields()[0], Op: flop.OpEq, Value: int64(1)})
+	assert.NoError(t, err)
+	assert.Equal[any](t, true, b.Args()["active_1"])
+	assert.Equal[any](t, createdAt, b.Args()["created_at_2"])
+	assert.Equal(t, 5, len(b.Args()))
+	assert.Equal(t, nil, snapshot["id_5"])
 }
 
 func TestWhereExpr(t *testing.T) {
 	t.Parallel()
 	filter, err := schema.ParseFilter("age = 30")
 	assert.NoError(t, err)
-	expr, err := schema.Compile(filter)
+	expr, err := schema.CompileFilter(filter)
 	assert.NoError(t, err)
 
 	got, gotArgs, gotErr := rawsql.WhereExpr(expr)
@@ -427,4 +538,99 @@ func TestWhereExpr(t *testing.T) {
 	assert.NoError(t, gotErr)
 	assert.Equal(t, "", got)
 	assert.Equal(t, map[string]any{}, gotArgs)
+}
+
+type unsupportedExpr struct{ flop.Expr }
+
+func TestBuilder_WhereExpr(t *testing.T) {
+	t.Parallel()
+	field := schema.Fields()[0]
+	cmp := flop.Cmp{Field: field, Op: flop.OpEq, Value: int64(1)}
+
+	type args struct {
+		expr flop.Expr
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr assert.ErrorFunc
+	}{
+		{name: "no expression", args: args{}, want: "", wantErr: assert.NoError},
+		{name: "comparison", args: args{expr: cmp}, want: "(u.id = @id_1)", wantErr: assert.NoError},
+		{name: "empty and", args: args{expr: flop.And{}}, wantErr: assert.Error},
+		{name: "empty or", args: args{expr: flop.Or{}}, wantErr: assert.Error},
+		{name: "nil and operand", args: args{expr: flop.And{Exprs: []flop.Expr{cmp, nil}}}, wantErr: assert.Error},
+		{name: "nil or operand", args: args{expr: flop.Or{Exprs: []flop.Expr{nil}}}, wantErr: assert.Error},
+		{name: "nil not operand", args: args{expr: flop.Not{}}, wantErr: assert.Error},
+		{name: "no field", args: args{expr: flop.Cmp{Op: flop.OpEq}}, wantErr: assert.Error},
+		{
+			name:    "zero field",
+			args:    args{expr: flop.Cmp{Field: &flop.Field{}, Op: flop.OpEq}},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "unknown op",
+			args:    args{expr: flop.Cmp{Field: field, Op: flop.Op(99), Value: int64(1)}},
+			wantErr: assert.Error,
+		},
+		{name: "null range", args: args{expr: flop.Cmp{Field: field, Op: flop.OpGt}}, wantErr: assert.Error},
+		{name: "null like", args: args{expr: flop.Cmp{Field: field, Op: flop.OpLike}}, wantErr: assert.Error},
+		{name: "pointer node", args: args{expr: &cmp}, wantErr: assert.Error},
+		{name: "typed nil", args: args{expr: (*flop.Cmp)(nil)}, wantErr: assert.Error},
+		{name: "unsupported node", args: args{expr: unsupportedExpr{}}, wantErr: assert.Error},
+		{
+			name:    "unsupported value",
+			args:    args{expr: flop.Cmp{Field: field, Op: flop.OpEq, Value: []int{1}}},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "non string like",
+			args:    args{expr: flop.Cmp{Field: field, Op: flop.OpLike, Value: int64(1)}},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			builder := rawsql.NewBuilder()
+			got, gotErr := builder.WhereExpr(test.args.expr)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				assert.IsError(t, gotErr, flop.ErrDeclaration)
+				assert.Equal(t, "", got)
+				assert.Equal(t, 0, len(builder.Args()))
+				return
+			}
+			assert.Equal(t, test.want, got)
+		})
+	}
+
+	// A parameter name is derived from the field path and numbered by the
+	// builder, so no two fragments can collide however a path is spelled.
+	named := flop.NewSchema(
+		flop.NewField("café").Ref("safe_column").String(),
+		flop.NewField("a-b").Ref("safe_column").String(),
+		flop.NewField("a_b").Ref("safe_column").String(),
+		flop.NewField("nested", "odd.name").Ref("safe_column").String(),
+		flop.NewField("世界").Ref("safe_column").String(),
+		flop.NewField("!").Ref("safe_column").String(),
+	).MustBuild()
+	var builder rawsql.Builder
+	marker := regexp.MustCompile(`@([A-Za-z_][A-Za-z_0-9]*)`)
+	fields := named.Fields()
+	wantNames := []string{"caf__1", "a_b_2", "a_b_3", "nested_odd_name_4", "___5", "__6"}
+	for i, field := range fields {
+		sql, err := builder.WhereExpr(flop.Cmp{Field: field, Op: flop.OpEq, Value: field.Path().String()})
+		assert.NoError(t, err)
+		matches := marker.FindStringSubmatch(sql)
+		assert.Equal(t, 2, len(matches))
+		assert.Equal(t, wantNames[i], matches[1])
+		assert.Equal[any](t, field.Path().String(), builder.Args()[matches[1]])
+	}
+	sql, err := builder.WhereExpr(flop.Cmp{Field: fields[1], Op: flop.OpEq, Value: "next"})
+	assert.NoError(t, err)
+	assert.Equal(t, "(safe_column = @a_b_7)", sql)
+	assert.Equal(t, 7, len(builder.Args()))
 }
