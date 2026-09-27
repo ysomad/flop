@@ -32,6 +32,7 @@ package aip132
 // space separating a field from its "desc" suffix is required.
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -83,7 +84,7 @@ func NewFieldPath(segments ...string) FieldPath {
 		}
 	}
 	return FieldPath{
-		segments:  segments,
+		segments:  slices.Clone(segments),
 		canonical: s.String(),
 	}
 }
@@ -100,8 +101,9 @@ func (f FieldPath) String() string {
 	return f.canonical
 }
 
-func (f FieldPath) GetSegments() []string {
-	return f.segments
+// Segments returns a copy of the path's unquoted segments.
+func (f FieldPath) Segments() []string {
+	return slices.Clone(f.segments)
 }
 
 // ParseOrderBy parses an AIP-132 order_by list. The method validates the

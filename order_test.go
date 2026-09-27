@@ -9,10 +9,11 @@ import (
 
 func TestSchema_ParseOrder(t *testing.T) {
 	t.Parallel()
+	// Parsing preserves the requested terms. TestSchema_TotalOrder verifies that
+	// pagination adds every missing unique-key field.
 	createdAt := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
 	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
 	displayName := aip132.OrderBy{FieldPath: aip132.NewFieldPath("display_name")}
-	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
 	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
 	metadataTagsDesc := aip132.OrderBy{
 		FieldPath:  aip132.NewFieldPath("metadata", "tags"),
@@ -33,21 +34,21 @@ func TestSchema_ParseOrder(t *testing.T) {
 			name:    "single field",
 			schema:  testSchema(t),
 			args:    args{text: "created_at"},
-			want:    []aip132.OrderBy{createdAt, id},
+			want:    []aip132.OrderBy{createdAt},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "descending",
 			schema:  testSchema(t),
 			args:    args{text: "created_at desc"},
-			want:    []aip132.OrderBy{createdAtDesc, id},
+			want:    []aip132.OrderBy{createdAtDesc},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "several fields",
 			schema:  testSchema(t),
 			args:    args{text: "created_at desc, display_name"},
-			want:    []aip132.OrderBy{createdAtDesc, displayName, id},
+			want:    []aip132.OrderBy{createdAtDesc, displayName},
 			wantErr: assert.NoError,
 		},
 		{
@@ -60,10 +61,10 @@ func TestSchema_ParseOrder(t *testing.T) {
 			wantErr: assert.NoError,
 		},
 		{
-			name:    "empty clause still orders totally",
+			name:    "empty clause stays empty",
 			schema:  testSchema(t),
 			args:    args{text: ""},
-			want:    []aip132.OrderBy{id},
+			want:    nil,
 			wantErr: assert.NoError,
 		},
 		{
@@ -101,7 +102,12 @@ func TestSchema_ParseOrder(t *testing.T) {
 		},
 		{name: "repeated field", schema: testSchema(t), args: args{text: "id, id"}, wantErr: assert.Error},
 		{name: "syntax error", schema: testSchema(t), args: args{text: "created_at desc,"}, wantErr: assert.Error},
-		{name: "ascending is not a keyword", schema: testSchema(t), args: args{text: "created_at asc"}, wantErr: assert.Error},
+		{
+			name:    "ascending is not a keyword",
+			schema:  testSchema(t),
+			args:    args{text: "created_at asc"},
+			wantErr: assert.Error,
+		},
 	}
 
 	for _, test := range tests {
@@ -123,6 +129,7 @@ func TestMergeOrder(t *testing.T) {
 	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
 	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
 	name := aip132.OrderBy{FieldPath: aip132.NewFieldPath("name")}
+	a := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a")}
 	aDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a"), Descending: true}
 	b := aip132.OrderBy{FieldPath: aip132.NewFieldPath("b")}
 	cDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("c"), Descending: true}
@@ -167,6 +174,11 @@ func TestMergeOrder(t *testing.T) {
 			args: args{def: []aip132.OrderBy{aDesc, b, cDesc}},
 			want: []aip132.OrderBy{aDesc, b, cDesc},
 		},
+		{
+			name: "repeats within an input collapse",
+			args: args{def: []aip132.OrderBy{b, b, a}, order: []aip132.OrderBy{aDesc, a}},
+			want: []aip132.OrderBy{aDesc, b},
+		},
 	}
 
 	for _, test := range tests {
@@ -184,7 +196,16 @@ func TestSchema_TotalOrder(t *testing.T) {
 	id := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
 	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
 	displayName := aip132.OrderBy{FieldPath: aip132.NewFieldPath("display_name")}
+	amount := aip132.OrderBy{FieldPath: aip132.NewFieldPath("amount")}
+	amountDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("amount"), Descending: true}
 	a := aip132.OrderBy{FieldPath: aip132.NewFieldPath("a")}
+
+	// A composite key has to end up complete, wherever its fields were asked for.
+	composite := NewSchema(
+		NewField("id").String().Sortable(),
+		NewField("created_at").Time().Sortable(),
+		NewField("amount").Int().Sortable(),
+	).CompositeKey("id", "created_at").MustBuild()
 
 	type args struct {
 		order []aip132.OrderBy
@@ -216,6 +237,24 @@ func TestSchema_TotalOrder(t *testing.T) {
 			want:   []aip132.OrderBy{idDesc, createdAt},
 		},
 		{
+			name:   "merged order already names the unique field",
+			schema: testSchema(t),
+			args: args{order: MergeOrder(
+				[]aip132.OrderBy{createdAtDesc},
+				[]aip132.OrderBy{idDesc, displayName},
+			)},
+			want: []aip132.OrderBy{idDesc, displayName, createdAtDesc},
+		},
+		{
+			name:   "request overrides the default direction",
+			schema: testSchema(t),
+			args: args{order: MergeOrder(
+				[]aip132.OrderBy{createdAtDesc},
+				[]aip132.OrderBy{createdAt},
+			)},
+			want: []aip132.OrderBy{createdAt, id},
+		},
+		{
 			name:   "empty order",
 			schema: testSchema(t),
 			args:   args{},
@@ -226,6 +265,37 @@ func TestSchema_TotalOrder(t *testing.T) {
 			schema: NewSchema(NewField("a").Ref("a").Int().Sortable()).MustBuild(),
 			args:   args{order: []aip132.OrderBy{a}},
 			want:   []aip132.OrderBy{a},
+		},
+
+		{
+			name:   "composite key on an empty order",
+			schema: composite,
+			args:   args{},
+			want:   []aip132.OrderBy{id, createdAt},
+		},
+		{
+			name:   "composite key is fully missing",
+			schema: composite,
+			args:   args{order: []aip132.OrderBy{amountDesc}},
+			want:   []aip132.OrderBy{amountDesc, id, createdAt},
+		},
+		{
+			name:   "composite key misses its time field",
+			schema: composite,
+			args:   args{order: []aip132.OrderBy{idDesc}},
+			want:   []aip132.OrderBy{idDesc, createdAt},
+		},
+		{
+			name:   "composite key misses its id field",
+			schema: composite,
+			args:   args{order: []aip132.OrderBy{createdAtDesc}},
+			want:   []aip132.OrderBy{createdAtDesc, id},
+		},
+		{
+			name:   "composite key keeps explicit positions",
+			schema: composite,
+			args:   args{order: []aip132.OrderBy{createdAtDesc, amount, idDesc}},
+			want:   []aip132.OrderBy{createdAtDesc, amount, idDesc},
 		},
 	}
 

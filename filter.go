@@ -53,7 +53,8 @@ func (o Op) String() string {
 }
 
 // Expr is a node of a compiled filter. The tree a schema compiles holds only
-// [And], [Or], [Not] and [Cmp], so a backend can switch over it exhaustively.
+// [And], [Or], [Not] and [Cmp] values (not pointers).
+// A nil root means match everything; nested operands must be non-nil.
 type Expr interface {
 	isExpr()
 }
@@ -71,7 +72,7 @@ type Not struct{ Expr Expr }
 //
 // Value is a string, int64, float64, bool, time.Time or time.Duration matching
 // the field's type, or nil for a null comparison. It is never user text: the
-// schema has already coerced it.
+// schema has already coerced it. CompileSeek may also supply uint64 or []byte.
 type Cmp struct {
 	Field *Field
 	Op    Op
@@ -82,6 +83,68 @@ func (And) isExpr() {}
 func (Or) isExpr()  {}
 func (Not) isExpr() {}
 func (Cmp) isExpr() {}
+
+// ValidateExpr checks a compiled expression before an adapter renders it.
+// It accepts nil roots and And, Or, Not and Cmp values. Malformed trees return
+// ErrDeclaration, including empty groups, nil operands and unsupported nodes.
+func ValidateExpr(expr Expr) error {
+	if expr == nil {
+		return nil
+	}
+	return validateExpr(expr)
+}
+
+func validateExpr(expr Expr) error {
+	switch node := expr.(type) {
+	case And:
+		return validateOperands(node.Exprs)
+	case Or:
+		return validateOperands(node.Exprs)
+	case Not:
+		return validateExpr(node.Expr)
+	case Cmp:
+		if node.Field == nil || node.Field.Ref() == "" {
+			return errorf(ErrDeclaration, "comparison has no field")
+		}
+		if node.Op < OpEq || node.Op > OpLike {
+			return errorf(ErrDeclaration, "unsupported comparison operator %s", node.Op)
+		}
+		if node.Value == nil {
+			if node.Op != OpEq && node.Op != OpNe {
+				return errorf(ErrDeclaration, "%s cannot compare to null", node.Op)
+			}
+			return nil
+		}
+		if node.Op == OpLike {
+			if _, ok := node.Value.(string); !ok {
+				return errorf(ErrDeclaration, "LIKE needs a string pattern")
+			}
+		}
+		switch value := node.Value.(type) {
+		case bool, int64, uint64, string, []byte, time.Time, time.Duration:
+			return nil
+		case float64:
+			if !math.IsNaN(value) && !math.IsInf(value, 0) {
+				return nil
+			}
+		}
+		return errorf(ErrDeclaration, "unsupported comparison value %T", node.Value)
+	default:
+		return errorf(ErrDeclaration, "unsupported expression node %T", expr)
+	}
+}
+
+func validateOperands(exprs []Expr) error {
+	if len(exprs) == 0 {
+		return errorf(ErrDeclaration, "expression group is empty")
+	}
+	for _, expr := range exprs {
+		if err := validateExpr(expr); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // comparators lists the operators each type accepts.
 var comparators = map[fieldType]map[string]Op{
@@ -117,15 +180,15 @@ func (s *Schema) ParseFilter(text string) (*aip160.Filter, error) {
 // ValidateFilter reports whether every restriction names a filterable field,
 // uses an operator that field accepts, and carries a value of its type.
 func (s *Schema) ValidateFilter(filter *aip160.Filter) error {
-	_, err := s.Compile(filter)
+	_, err := s.CompileFilter(filter)
 	return err
 }
 
-// Compile resolves a filter against the schema and coerces every argument to
+// CompileFilter resolves a filter against the schema and coerces every argument to
 // the Go value its field's type calls for.
 //
 // A nil or empty filter compiles to a nil Expr, meaning match everything.
-func (s *Schema) Compile(filter *aip160.Filter) (Expr, error) {
+func (s *Schema) CompileFilter(filter *aip160.Filter) (Expr, error) {
 	if filter == nil || filter.Expression == nil {
 		return nil, nil
 	}
@@ -137,6 +200,9 @@ func (s *Schema) compileExpression(e *aip160.Expression) (Expr, error) {
 	// which is all a database can offer, so both levels flatten into one And.
 	var exprs []Expr
 	for _, sequence := range e.Sequences {
+		if len(sequence.Factors) == 0 {
+			return nil, errorf(ErrInvalidFilter, "sequence is empty")
+		}
 		for _, factor := range sequence.Factors {
 			expr, err := s.compileFactor(factor)
 			if err != nil {
@@ -175,6 +241,9 @@ func (s *Schema) compileFactor(f aip160.Factor) (Expr, error) {
 }
 
 func (s *Schema) compileTerm(t aip160.Term) (Expr, error) {
+	if t.Simple.Composite != nil && t.Simple.Restriction != nil {
+		return nil, errorf(ErrInvalidFilter, "term has both a restriction and a composite")
+	}
 	var (
 		expr Expr
 		err  error
@@ -198,8 +267,17 @@ func (s *Schema) compileTerm(t aip160.Term) (Expr, error) {
 
 func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 	member := r.Member
+	if err := validateMember(member); err != nil {
+		return nil, err
+	}
 	if r.Comparator == "" {
+		if r.Arg != nil {
+			return nil, errorf(ErrInvalidFilter, "argument has no comparator")
+		}
 		return s.compileImplicit(member)
+	}
+	if r.Arg == nil {
+		return nil, errorf(ErrInvalidFilter, "comparison has no argument")
 	}
 	if r.Arg.Composite != nil {
 		return nil, errorf(
@@ -224,6 +302,9 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 	}
 
 	arg := r.Arg.Member
+	if err := validateMember(arg); err != nil {
+		return nil, err
+	}
 	// A bare null is the only literal that crosses every type, and only an
 	// equality can ask about it.
 	if !arg.Quoted() && arg.Path() == "null" {
@@ -256,6 +337,16 @@ func (s *Schema) compileRestriction(r *aip160.Restriction) (Expr, error) {
 		value = likePattern(value.(string))
 	}
 	return Cmp{Field: field, Op: op, Value: value}, nil
+}
+
+func validateMember(member aip160.Member) error {
+	values := append([]aip160.Value{member.Value}, member.Fields...)
+	for _, value := range values {
+		if value.Value == "" && !value.Quoted {
+			return errorf(ErrInvalidFilter, "member has an empty unquoted segment")
+		}
+	}
+	return nil
 }
 
 // memberPath reads a member as a field path.

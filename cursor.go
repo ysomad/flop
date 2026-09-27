@@ -47,8 +47,7 @@ type CursorValue struct {
 type CursorPosition []CursorValue
 
 // seekableFields resolves an order a cursor may page under: every term has to
-// name a sortable field, and one of them has to be unique, or a page repeats
-// or drops rows.
+// name a sortable field, and every field of the unique key must be present.
 func (s *Schema) seekableFields(order []aip132.OrderBy) ([]*Field, error) {
 	fields, err := s.SortableFields(order)
 	if err != nil {
@@ -57,16 +56,13 @@ func (s *Schema) seekableFields(order []aip132.OrderBy) ([]*Field, error) {
 	if len(fields) == 0 {
 		return nil, errorf(ErrDeclaration, "seeking needs an order")
 	}
-	if !slices.ContainsFunc(fields, func(field *Field) bool { return field.unique }) {
-		paths := make([]string, len(fields))
-		for i, field := range fields {
-			paths[i] = field.path.String()
+	if len(s.uniqueKey) == 0 {
+		return nil, errorf(ErrDeclaration, "seeking needs a declared unique key")
+	}
+	for _, field := range s.uniqueKey {
+		if !slices.Contains(fields, field) {
+			return nil, errorf(ErrDeclaration, "seeking needs unique key field %q in the order", field.path)
 		}
-		return nil, errorf(
-			ErrDeclaration,
-			"seeking needs a unique field in the order, and %q has none",
-			paths,
-		)
 	}
 	return fields, nil
 }
@@ -136,8 +132,8 @@ func seekValue(value CursorValue, field *Field) (any, error) {
 			"cursor addresses %q where the order has %q", value.FieldPath, field.Path(),
 		)
 	}
-	if value.Value == nil {
-		return nil, errorf(ErrInvalidCursor, "ordering field %q is null", field.Path())
+	if err := validateCursorValue(value); err != nil {
+		return nil, err
 	}
 	return value.Value, nil
 }
@@ -145,8 +141,8 @@ func seekValue(value CursorValue, field *Field) (any, error) {
 // DecodeCursor reads a page token back into the position it addresses.
 //
 // order and filter are the ones the request arrived with. A token only decodes
-// under the pair it was issued for, so a client cannot carry a position over to
-// a different filter. An empty token is the first page: it yields a nil
+// under the pair it was issued for. This binding is not authentication: tokens
+// are unsigned and clients can construct them. An empty token yields a nil
 // position and no error.
 //
 // The order only has to name sortable fields here. That it also has to be
@@ -214,17 +210,23 @@ type CursorPage[T any] struct {
 	NextCursor string
 }
 
-// CursorPage assembles the page a cursor query returned: it splits the surplus
+// NewCursorPage assembles the page a cursor query returned: it splits the surplus
 // row off and mints the token that continues after the last row of the page.
 //
 // A query asks for pageSize+1 rows, so that the surplus row is there to report
 // whether another page follows.
-func (s *Schema) CursorPage[T any](
+func (s *Schema) NewCursorPage[T any](
 	rows []T,
 	pageSize int32,
 	order []aip132.OrderBy,
 	filter *aip160.Filter,
 ) (CursorPage[T], error) {
+	if pageSize <= 0 {
+		return CursorPage[T]{}, errorf(ErrInvalidPageSize, "must be positive")
+	}
+	if err := s.ValidateOrder(order); err != nil {
+		return CursorPage[T]{}, err
+	}
 	items, hasNext := trim(rows, pageSize)
 	page := CursorPage[T]{Items: items}
 	if !hasNext {
@@ -326,6 +328,9 @@ func encodeCursor(
 }
 
 func appendCursorValue(dst []byte, value CursorValue) ([]byte, error) {
+	if err := validateCursorValue(value); err != nil {
+		return nil, err
+	}
 	switch v := value.Value.(type) {
 	case bool:
 		bit := byte(0)
@@ -338,19 +343,12 @@ func appendCursorValue(dst []byte, value CursorValue) ([]byte, error) {
 	case uint64:
 		return appendFixed64(dst, uint64Kind, v), nil
 	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return nil, errorf(ErrInvalidCursor,
-				"cursor position %q does not order rows: %v", value.FieldPath, v)
-		}
 		return appendFixed64(dst, float64Kind, math.Float64bits(v)), nil
 	case string:
 		return appendVarbytes(dst, stringKind, []byte(v)), nil
 	case []byte:
 		return appendVarbytes(dst, bytesKind, v), nil
 	case time.Time:
-		if v.IsZero() {
-			return nil, errorf(ErrInvalidCursor, "cursor position %q is the zero time", value.FieldPath)
-		}
 		encoded, err := v.MarshalBinary()
 		if err != nil {
 			return nil, errorf(ErrInvalidCursor, "cursor position %q: %v", value.FieldPath, err)
@@ -358,12 +356,31 @@ func appendCursorValue(dst []byte, value CursorValue) ([]byte, error) {
 		return appendVarbytes(dst, timeKind, encoded), nil
 	case time.Duration:
 		return appendFixed64(dst, durationKind, uint64(v)), nil
+	}
+	return nil, errorf(ErrInvalidCursor, "unsupported cursor value %T", value.Value)
+}
+
+func validateCursorValue(value CursorValue) error {
+	switch v := value.Value.(type) {
+	case bool, int64, uint64, string, []byte, time.Duration:
+		return nil
+	case float64:
+		if !math.IsNaN(v) && !math.IsInf(v, 0) {
+			return nil
+		}
+		return errorf(ErrInvalidCursor, "cursor position %q does not order rows: %v", value.FieldPath, v)
+	case time.Time:
+		if v.IsZero() {
+			return errorf(ErrInvalidCursor, "cursor position %q is the zero time", value.FieldPath)
+		}
+		if _, err := v.MarshalBinary(); err != nil {
+			return errorf(ErrInvalidCursor, "cursor position %q: %v", value.FieldPath, err)
+		}
+		return nil
 	case nil:
-		return nil, errorf(ErrInvalidCursor,
-			"cursor position %q is null, so it cannot address a row", value.FieldPath)
+		return errorf(ErrInvalidCursor, "cursor position %q is null", value.FieldPath)
 	default:
-		return nil, errorf(ErrInvalidCursor,
-			"cursor position %q has unsupported type %T", value.FieldPath, value.Value)
+		return errorf(ErrInvalidCursor, "cursor position %q has unsupported type %T", value.FieldPath, value.Value)
 	}
 }
 
@@ -410,6 +427,11 @@ func decodeCursor(
 	if len(r.buf) != 0 {
 		return nil, errorf(ErrInvalidCursor, "has %d trailing bytes", len(r.buf))
 	}
+	for _, value := range position {
+		if err := validateCursorValue(value); err != nil {
+			return nil, err
+		}
+	}
 	return position, nil
 }
 
@@ -418,13 +440,21 @@ func decodeCursor(
 // only meaningful while err is nil.
 type cursorReader struct {
 	buf []byte
-	err error
+	// path names the field being read, so a failure inside a value says which
+	// one it was. It is empty while the version and the binding are read.
+	path string
+	err  error
 }
 
 func (r *cursorReader) fail(format string, args ...any) {
-	if r.err == nil {
-		r.err = errorf(ErrInvalidCursor, format, args...)
+	if r.err != nil {
+		return
 	}
+	if r.path != "" {
+		format = "position %q " + format
+		args = append([]any{r.path}, args...)
+	}
+	r.err = errorf(ErrInvalidCursor, format, args...)
 }
 
 // next takes the leading n bytes.
@@ -433,7 +463,7 @@ func (r *cursorReader) next(n int) []byte {
 		return nil
 	}
 	if len(r.buf) < n {
-		r.fail("is truncated")
+		r.fail("is truncated: needs %d bytes, %d remain", n, len(r.buf))
 		return nil
 	}
 	head := r.buf[:n]
@@ -449,14 +479,20 @@ func (r *cursorReader) uint64() uint64 {
 	return binary.BigEndian.Uint64(raw)
 }
 
-// varbytes takes a uvarint length and the payload that follows it.
+// varbytes takes a uvarint length and the payload that follows it. A payload
+// shorter than the length it declares is reported apart from a length that
+// does not decode, because that is what a token clipped in transit looks like.
 func (r *cursorReader) varbytes() []byte {
 	if r.err != nil {
 		return nil
 	}
 	length, read := binary.Uvarint(r.buf)
-	if read <= 0 || length > uint64(len(r.buf)-read) {
+	if read <= 0 {
 		r.fail("has an unreadable length")
+		return nil
+	}
+	if length > uint64(len(r.buf)-read) {
+		r.fail("is truncated: needs %d bytes, %d remain", length, len(r.buf)-read)
 		return nil
 	}
 	r.buf = r.buf[read:]
@@ -465,6 +501,7 @@ func (r *cursorReader) varbytes() []byte {
 
 // value reads one kind-tagged value. path only names the field in errors.
 func (r *cursorReader) value(path string) any {
+	r.path = path
 	tag := r.next(1)
 	if r.err != nil {
 		return nil
@@ -476,7 +513,7 @@ func (r *cursorReader) value(path string) any {
 			return nil
 		}
 		if raw[0] > 1 {
-			r.fail("position %q is not a bool", path)
+			r.fail("is not a bool")
 			return nil
 		}
 		return raw[0] == 1
@@ -485,12 +522,7 @@ func (r *cursorReader) value(path string) any {
 	case uint64Kind:
 		return r.uint64()
 	case float64Kind:
-		value := math.Float64frombits(r.uint64())
-		if r.err == nil && (math.IsNaN(value) || math.IsInf(value, 0)) {
-			r.fail("position %q does not order rows: %v", path, value)
-			return nil
-		}
-		return value
+		return math.Float64frombits(r.uint64())
 	case stringKind:
 		return string(r.varbytes())
 	case bytesKind:
@@ -502,14 +534,14 @@ func (r *cursorReader) value(path string) any {
 		}
 		var value time.Time
 		if err := value.UnmarshalBinary(raw); err != nil {
-			r.fail("position %q is not a time: %v", path, err)
+			r.fail("is not a time: %v", err)
 			return nil
 		}
 		return value
 	case durationKind:
 		return time.Duration(r.uint64())
 	default:
-		r.fail("position %q has unknown value kind %d", path, kind)
+		r.fail("has unknown value kind %d", kind)
 		return nil
 	}
 }

@@ -111,6 +111,32 @@ func (p *parser) lex() (*token, error) {
 	if p.input == "" {
 		return &token{kind: kindEnd}, nil
 	}
+	if p.input[0] == '\'' || p.input[0] == '"' {
+		quote := p.input[0]
+		for i := 1; i < len(p.input); i++ {
+			if p.input[i] == '\\' {
+				i++
+				continue
+			}
+			if p.input[i] == quote {
+				value := p.input[:i+1]
+				p.input = p.input[i+1:]
+				return &token{kind: kindString, value: value}, nil
+			}
+		}
+		return nil, fmt.Errorf("unterminated quoted string")
+	}
+	// At EOF these are still operators, so dangling operators are diagnosed.
+	switch p.input {
+	case "AND", "OR", "NOT":
+		value := p.input
+		p.input = ""
+		kind := value
+		if value == "NOT" {
+			kind = kindNegate
+		}
+		return &token{kind: kind, value: value}, nil
+	}
 	if value := negativeNumberRE.FindString(p.input); value != "" {
 		p.input = p.input[len(value):]
 		return &token{kind: kindText, value: value}, nil
@@ -657,7 +683,7 @@ func (p *parser) factor() (Factor, bool, error) {
 			return Factor{}, false, err
 		}
 		if !ok {
-			return Factor{}, false, fmt.Errorf("expected sequence after AND")
+			return Factor{}, false, fmt.Errorf("expected term after OR")
 		}
 		f.Terms = append(f.Terms, t)
 	}
@@ -786,7 +812,7 @@ func (p *parser) value() (Value, bool, error) {
 		return Value{}, false, err
 	}
 	if v != nil {
-		v.value, err = strconv.Unquote(v.value)
+		v.value, err = unquoteString(v.value)
 		if err != nil {
 			return Value{}, false, fmt.Errorf("error unquoting string: %w", err)
 		}
@@ -801,6 +827,35 @@ func (p *parser) value() (Value, bool, error) {
 		return Value{}, false, nil
 	}
 	return Value{Value: v.value}, true, nil
+}
+
+// unquoteString gives both quote styles the same escapes and permits any
+// number of characters. Unquote alone treats single quotes as Go rune literals.
+func unquoteString(text string) (string, error) {
+	quote := text[0]
+	text = text[1 : len(text)-1]
+	var result strings.Builder
+	for text != "" {
+		if text[0] == '\n' || text[0] == '\r' {
+			return "", fmt.Errorf("unescaped newline in string")
+		}
+		if len(text) >= 2 && text[0] == '\\' && (text[1] == '\'' || text[1] == '"' || text[1] == '*') {
+			result.WriteByte(text[1])
+			text = text[2:]
+			continue
+		}
+		value, multibyte, tail, err := strconv.UnquoteChar(text, quote)
+		if err != nil {
+			return "", err
+		}
+		if multibyte {
+			result.WriteRune(value)
+		} else {
+			result.WriteByte(byte(value))
+		}
+		text = tail
+	}
+	return result.String(), nil
 }
 
 func (p *parser) composite() (*Expression, error) {

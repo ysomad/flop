@@ -12,7 +12,7 @@ func migrate(ctx context.Context, db *pgxpool.Pool) error {
 		`DROP TABLE IF EXISTS payments`,
 
 		`CREATE TABLE IF NOT EXISTS payments (
-			id text NOT NULL,
+			id uuid NOT NULL,
 			amount bigint NOT NULL CHECK (amount >= 0),
 			created_at timestamptz NOT NULL,
 			captured_at timestamptz NOT NULL,
@@ -21,9 +21,14 @@ func migrate(ctx context.Context, db *pgxpool.Pool) error {
 			PRIMARY KEY (id, captured_at)
 		)`,
 
-		`INSERT INTO payments (id, amount, created_at, captured_at, provider, user_id)
+		`WITH ids AS MATERIALIZED (
+			SELECT bucket, gen_random_uuid() AS id
+			FROM generate_series(0, 29999) AS buckets(bucket)
+		)
+		INSERT INTO payments (id, amount, created_at, captured_at, provider, user_id)
 		SELECT
-			'pay_' || lpad((n % 30000)::text, 5, '0'),
+			-- Reuse UUIDs across creation times to exercise the composite key.
+			ids.id,
 			CASE n % 13
 				WHEN 0 THEN 0
 				WHEN 1 THEN n % 100
@@ -37,21 +42,14 @@ func migrate(ctx context.Context, db *pgxpool.Pool) error {
 				+ ((n * 7919) % 1461) * interval '1 day'
 				+ ((n * 104729) % 86400) * interval '1 second'
 				+ n * interval '1 microsecond',
-			-- captured_at collides on purpose, roughly 50 rows per timestamp.
-			-- A secondary sort key only orders rows that tie on the key before
-			-- it, so a unique captured_at would make "captured_at asc, amount
-			-- desc" indistinguishable from "captured_at asc", and would leave
-			-- the tie-breaking branch of the cursor seek untested.
-			--
-			-- The day bucket keeps the primary key intact: the four rows that
-			-- share an id are n, n+30000, n+60000 and n+90000, which land on
-			-- four different days.
+			-- Timestamp ties exercise secondary ordering and cursor seeking.
 			timestamptz '2022-01-01 00:00:00+00'
 				+ (n / 30000) * interval '1 day'
 				+ ((n % 30000) % 600) * interval '1 minute',
 			(ARRAY['stripe', 'adyen', 'paypal', 'checkout', 'worldpay', 'manual'])[(1 + n % 6)::int],
 			'usr_' || lpad(((n * 3571) % 25000)::text, 5, '0')
 		FROM generate_series(1::bigint, 120000::bigint) AS series(n)
+		JOIN ids ON ids.bucket = n % 30000
 		WHERE NOT EXISTS (SELECT 1 FROM payments)`,
 	}
 	for i, m := range migrations {

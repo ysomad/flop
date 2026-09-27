@@ -2,6 +2,7 @@ package flop
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ysomad/flop/aip132"
@@ -75,12 +76,13 @@ func (f *Field) Ref() string { return f.ref }
 
 // FieldBuilder builds a [Field].
 type FieldBuilder struct {
-	field Field
+	field    Field
+	nilValue bool
 }
 
 // NewField starts a field at the given path segments. Segments are joined by
 // the AIP-161 traversal operator, so NewField("metadata", "tags") declares the
-// path metadata.tags.
+// path metadata.tags. No segment may begin with an ASCII digit.
 func NewField(segments ...string) *FieldBuilder {
 	return &FieldBuilder{field: Field{path: aip132.NewFieldPath(segments...)}}
 }
@@ -137,9 +139,8 @@ func (b *FieldBuilder) Implicit() *FieldBuilder {
 	return b.Filterable()
 }
 
-// Unique declares that the field orders rows totally, and implies
-// [FieldBuilder.Sortable]. Cursor pagination needs one such field to page
-// without repeating or dropping rows, and a schema may declare at most one.
+// Unique declares a single-field unique key and implies [FieldBuilder.Sortable].
+// For rows identified by several fields together, use [SchemaBuilder.CompositeKey].
 func (b *FieldBuilder) Unique() *FieldBuilder {
 	b.field.unique = true
 	return b.Sortable()
@@ -149,6 +150,11 @@ func (b *FieldBuilder) Unique() *FieldBuilder {
 // [Schema.EncodeCursor] addresses a row by. Only a field a cursor may order by
 // needs one.
 func (b *FieldBuilder) Value[T any](fn func(T) any) *FieldBuilder {
+	b.nilValue = fn == nil
+	if fn == nil {
+		b.field.value = nil
+		return b
+	}
 	b.field.value = func(row any) (any, bool) {
 		typed, ok := row.(T)
 		if !ok {
@@ -164,17 +170,31 @@ type Schema struct {
 	fields    []*Field
 	byPath    map[string]*Field
 	implicit  []*Field
-	uniqueKey *Field
+	uniqueKey []*Field
 }
 
 // SchemaBuilder builds a [Schema].
 type SchemaBuilder struct {
-	fields []*FieldBuilder
+	fields          []*FieldBuilder
+	compositePaths  []string
+	compositeKeySet bool
 }
 
 // NewSchema starts a schema holding the given fields.
 func NewSchema(fields ...*FieldBuilder) *SchemaBuilder {
-	return &SchemaBuilder{fields: fields}
+	return &SchemaBuilder{fields: slices.Clone(fields)}
+}
+
+// CompositeKey declares at least two fields whose combined values uniquely
+// identify a row. Paths are public field names, such as "id" or "user.id",
+// matching Field.Path().String(). Each field must be declared sortable.
+// Cursor orders must contain every key field; TotalOrder appends missing ones
+// in the order given here. This declaration cannot be combined with
+// [FieldBuilder.Unique]. A later call replaces the previous key declaration.
+func (b *SchemaBuilder) CompositeKey(paths ...string) *SchemaBuilder {
+	b.compositePaths = slices.Clone(paths)
+	b.compositeKeySet = true
+	return b
 }
 
 // Build validates the declared fields and returns the schema.
@@ -187,7 +207,11 @@ func (b *SchemaBuilder) Build() (*Schema, error) {
 		if field == nil {
 			return nil, errorf(ErrDeclaration, "field is nil")
 		}
-		f := &field.field
+		if field.nilValue {
+			return nil, errorf(ErrDeclaration, "field %q has a nil value callback", field.field.path)
+		}
+		declaration := field.field
+		f := &declaration
 		if f.ref == "" {
 			f.ref = f.path.String()
 		}
@@ -195,6 +219,11 @@ func (b *SchemaBuilder) Build() (*Schema, error) {
 		path := f.path.String()
 		if path == "" {
 			return nil, errorf(ErrDeclaration, "field has no path")
+		}
+		for _, segment := range f.path.Segments() {
+			if len(segment) > 0 && segment[0] >= '0' && segment[0] <= '9' {
+				return nil, errorf(ErrDeclaration, "field %q has a digit-leading segment %q", path, segment)
+			}
 		}
 		if f.typ == 0 {
 			return nil, errorf(ErrDeclaration, "field %q has no type", path)
@@ -212,19 +241,37 @@ func (b *SchemaBuilder) Build() (*Schema, error) {
 			return nil, errorf(ErrDeclaration, "field %q is declared twice", path)
 		}
 		if f.unique {
-			if s.uniqueKey != nil {
+			if b.compositeKeySet {
+				return nil, errorf(ErrDeclaration, "field %q declares Unique alongside a schema CompositeKey", path)
+			}
+			if len(s.uniqueKey) > 0 {
 				return nil, errorf(
 					ErrDeclaration,
 					"fields %q and %q are both unique",
-					s.uniqueKey.path.String(),
+					s.uniqueKey[0].path.String(),
 					path,
 				)
 			}
-			s.uniqueKey = f
+			s.uniqueKey = []*Field{f}
 		}
 		s.byPath[path] = f
 		if f.implicit {
 			s.implicit = append(s.implicit, f)
+		}
+	}
+	if b.compositeKeySet {
+		if len(b.compositePaths) < 2 {
+			return nil, errorf(ErrDeclaration, "composite key needs at least two fields; use Unique for a single field")
+		}
+		for _, path := range b.compositePaths {
+			field, ok := s.byPath[path]
+			if !ok || !field.sortable {
+				return nil, errorf(ErrDeclaration, "composite key field %q must be declared sortable", path)
+			}
+			if slices.Contains(s.uniqueKey, field) {
+				return nil, errorf(ErrDeclaration, "composite key repeats field %q", path)
+			}
+			s.uniqueKey = append(s.uniqueKey, field)
 		}
 	}
 	return s, nil
@@ -240,11 +287,20 @@ func (b *SchemaBuilder) MustBuild() *Schema {
 	return s
 }
 
-// Fields returns the declared fields in declaration order.
-func (s *Schema) Fields() []*Field { return s.fields }
+// Fields returns a copy of the field slice in declaration order.
+func (s *Schema) Fields() []*Field { return slices.Clone(s.fields) }
 
-// UniqueField returns the field declared unique, or nil if there is none.
-func (s *Schema) UniqueField() *Field { return s.uniqueKey }
+// UniqueField returns the single-field unique key, or nil if the key is absent
+// or composite. Use UniqueFields to inspect all key fields.
+func (s *Schema) UniqueField() *Field {
+	if len(s.uniqueKey) != 1 {
+		return nil
+	}
+	return s.uniqueKey[0]
+}
+
+// UniqueFields returns a copy of the unique key's fields in key declaration order.
+func (s *Schema) UniqueFields() []*Field { return slices.Clone(s.uniqueKey) }
 
 // FilterableField returns the filterable field at path.
 func (s *Schema) FilterableField(path aip132.FieldPath) (*Field, error) {
@@ -273,6 +329,9 @@ func (s *Schema) SortableField(path aip132.FieldPath) (*Field, error) {
 // SortableFields resolves each term of an order to the field it names, keeping
 // the order's own indexing so a term's direction is read from it directly.
 func (s *Schema) SortableFields(order []aip132.OrderBy) ([]*Field, error) {
+	if err := s.ValidateOrder(order); err != nil {
+		return nil, err
+	}
 	fields := make([]*Field, 0, len(order))
 	for _, term := range order {
 		field, err := s.SortableField(term.FieldPath)

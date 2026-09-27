@@ -11,10 +11,14 @@ import (
 func TestParseFilter(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr assert.ErrorFunc
+		name  string
+		input string
+		// want is the node rendering, wantGroup the grouping the parser chose,
+		// and wantMsg the exact error text. Each is checked only when set.
+		want      string
+		wantGroup string
+		wantMsg   string
+		wantErr   assert.ErrorFunc
 	}{
 		{name: "empty", input: "", want: "filter{}", wantErr: assert.NoError},
 		{
@@ -63,16 +67,113 @@ func TestParseFilter(t *testing.T) {
 		{name: "trailing token", input: "a)", wantErr: assert.Error},
 		{name: "dot without a field", input: "a. = 1", wantErr: assert.Error},
 		{name: "invalid escape", input: `a = "\q"`, wantErr: assert.Error},
-		{name: "escaped wildcard is not a Go escape", input: `a = "x\*y"`, wantErr: assert.Error},
-		{name: "multi rune single quoted string", input: "a = 'xy'", wantErr: assert.Error},
+
+		{name: "unterminated quote", input: `a = '`, wantErr: assert.Error},
+		{name: "empty", input: " \n\t", wantGroup: "", wantErr: assert.NoError},
+		{name: "comparison", input: "price >= 12.5", wantGroup: "price >= 12.5", wantErr: assert.NoError},
 		{
-			// A lone quote is not a string, and the TEXT class accepts it, so it
-			// reads as text rather than failing.
-			name:    "unterminated quote is text",
-			input:   `a = '`,
-			want:    `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},"=",arg{member{value{"'"}}}}}}}}}}`,
-			wantErr: assert.NoError,
+			name:      "all comparison operators",
+			input:     "a != 1 AND b < 2 AND c <= 3 AND d > 4",
+			wantGroup: "(a != 1 AND b < 2 AND c <= 3 AND d > 4)",
+			wantErr:   assert.NoError,
 		},
+		{name: "minimum int64", input: "value = -9223372036854775808", wantGroup: "value = -9223372036854775808", wantErr: assert.NoError},
+		{name: "maximum uint64", input: "value = 18446744073709551615", wantGroup: "value = 18446744073709551615", wantErr: assert.NoError},
+		{name: "negative number is not a negation", input: "total > -30", wantGroup: "total > -30", wantErr: assert.NoError},
+		{name: "escaped unicode string", input: `name = "line\n世界"`, wantGroup: `name = "line\n世界"`, wantErr: assert.NoError},
+		{name: "escaped quote", input: `"a\"b"`, wantGroup: `"a\"b"`, wantErr: assert.NoError},
+		{name: "multi rune single quoted literal", input: `'it\'s'`, wantGroup: `"it's"`, wantErr: assert.NoError},
+		{name: "double quote inside single quotes", input: `'a"b'`, wantGroup: `"a\"b"`, wantErr: assert.NoError},
+		{name: "escaped wildcard", input: `name = "a\*b"`, wantGroup: `name = "a*b"`, wantErr: assert.NoError},
+		{name: "quoted keyword is text", input: `"and"`, wantGroup: `"and"`, wantErr: assert.NoError},
+		{name: "aip precedence", input: "a = 1 OR b = 2 AND c = 3", wantGroup: "((a = 1 OR b = 2) AND c = 3)", wantErr: assert.NoError},
+		{name: "sequence", input: `"blue" "chair"`, wantGroup: `("blue" "chair")`, wantErr: assert.NoError},
+		{name: "word text", input: "chair", wantGroup: "chair", wantErr: assert.NoError},
+		{name: "negation", input: "-deleted = true", wantGroup: "-deleted = true", wantErr: assert.NoError},
+		{
+			name:      "not and literal values",
+			input:     "NOT (active = false OR deleted = null)",
+			wantGroup: "-(active = false OR deleted = null)",
+			wantErr:   assert.NoError,
+		},
+		{name: "field value", input: "state = active", wantGroup: "state = active", wantErr: assert.NoError},
+		{name: "parenthesized", input: "(a = 1)", wantGroup: "a = 1", wantErr: assert.NoError},
+		{name: "trailing whitespace", input: "a ", wantGroup: "a", wantErr: assert.NoError},
+		{name: "terminal wildcard", input: `labels.* = "value"`, wantGroup: `labels.* = "value"`, wantErr: assert.NoError},
+		{name: "exponent", input: "1e+2", wantGroup: "1e+2", wantErr: assert.NoError},
+		{name: "has", input: `tags:"blue"`, wantGroup: `tags : "blue"`, wantErr: assert.NoError},
+		{name: "has bare identifier", input: "tags:blue", wantGroup: "tags : blue", wantErr: assert.NoError},
+		{name: "has dotted path", input: `metadata.tags:"blue"`, wantGroup: `metadata.tags : "blue"`, wantErr: assert.NoError},
+		{name: "negated has", input: `NOT tags:"blue"`, wantGroup: `-tags : "blue"`, wantErr: assert.NoError},
+		{name: "question mark escape is not a Go escape", input: `'a\?b'`, wantErr: assert.Error},
+		// Values carry no type until a schema reads them, so a filter the old
+		// parser rejected while converting a literal now parses and is refused
+		// by the schema instead.
+		{name: "integer overflow", input: "value = 18446744073709551616", wantGroup: "value = 18446744073709551616", wantErr: assert.NoError},
+		{name: "malformed number", input: "value = 1e", wantGroup: "value = 1e", wantErr: assert.NoError},
+		{name: "lowercase and is a sequence", input: "a = 1 and b = 2", wantGroup: "(a = 1 and b = 2)", wantErr: assert.NoError},
+		{name: "wildcard inside path", input: "labels.*.value = 1", wantGroup: "labels.*.value = 1", wantErr: assert.NoError},
+
+		{name: "double negation is not a term", input: `NOT NOT name = "x"`, wantErr: assert.Error},
+		{name: "function call syntax", input: "distance(location, point) < 10", wantErr: assert.Error},
+		{name: "comma where a value is expected", input: "age = ,", wantErr: assert.Error},
+		{name: "leading comma", input: ",", wantErr: assert.Error},
+		{name: "comma after a complete expression", input: "a = 1, b = 2", wantErr: assert.Error},
+		{name: "invalid operator", input: "active ! true", wantErr: assert.Error},
+		{name: "invalid string escape", input: `name = "\q"`, wantErr: assert.Error},
+		{name: "unbalanced composite", input: "(a = 1", wantErr: assert.Error},
+		{name: "empty composite", input: "()", wantErr: assert.Error},
+		{name: "not without operand", input: "NOT ", wantErr: assert.Error},
+		{name: "minus without operand", input: "-", wantErr: assert.Error},
+		{name: "and without right operand", input: "a = 1 AND ", wantErr: assert.Error},
+		{name: "and before invalid operand", input: "a = 1 AND )", wantErr: assert.Error},
+		{name: "sequence before invalid operand", input: "a (", wantErr: assert.Error},
+		{name: "or without right operand", input: "a = 1 OR ", wantErr: assert.Error},
+		{name: "or before invalid operand", input: "a = 1 OR )", wantErr: assert.Error},
+		{name: "unexpected closing parenthesis", input: "a)", wantErr: assert.Error},
+		{name: "invalid traversal", input: "a. = 1", wantErr: assert.Error},
+
+		// Whitespace is significant between the factors of a sequence, around
+		// AND and OR, and after a negating '-', which abuts what it negates.
+		{name: "detached negation", input: "- 30", wantErr: assert.Error},
+		{name: "detached negation of a restriction", input: "- a = 1", wantErr: assert.Error},
+		{name: "detached negation of a composite", input: "- (a = 1)", wantErr: assert.Error},
+		{name: "whitespace around a traversal", input: "a . b", wantErr: assert.Error},
+		{name: "whitespace after a traversal", input: "a. b", wantErr: assert.Error},
+		{name: "whitespace before a traversal", input: "a .b", wantErr: assert.Error},
+		{name: "number split by whitespace", input: "value = 1 .5", wantErr: assert.Error},
+		{name: "factors without whitespace", input: `"a"b`, wantErr: assert.Error},
+		{name: "composites without whitespace", input: "(a)(b)", wantErr: assert.Error},
+		{name: "composite without whitespace", input: "a(b)", wantErr: assert.Error},
+		{name: "and without whitespace before it", input: "(a)AND b", wantErr: assert.Error},
+		{name: "or without whitespace before it", input: `"x"OR y`, wantErr: assert.Error},
+		{name: "negation without whitespace before it", input: "(a)NOT b", wantErr: assert.Error},
+
+		{name: "attached negation", input: "-30", wantGroup: "-30", wantErr: assert.NoError},
+		{name: "duration", input: "wait < 2h", wantGroup: "wait < 2h", wantErr: assert.NoError},
+		{name: "traversal", input: "a.b = 1", wantGroup: "a.b = 1", wantErr: assert.NoError},
+		{name: "and between composites", input: "(a) AND (b)", wantGroup: "(a AND b)", wantErr: assert.NoError},
+
+		// Two spellings of one filter parse to one tree, which is what a cursor
+		// binding taken over the rendering rests on.
+		{name: "padded restriction", input: "  a = 1  ", want: `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},"=",arg{member{value{"1"}}}}}}}}}}`, wantErr: assert.NoError},
+		{name: "tight restriction", input: "a=1", want: `filter{expression{sequence{factor{term{simple{restriction{member{value{"a"}},"=",arg{member{value{"1"}}}}}}}}}}`, wantErr: assert.NoError},
+
+		{name: "dangling and", input: "a AND", wantMsg: "expected sequence after AND", wantErr: assert.Error},
+		{name: "dangling or", input: "a OR", wantMsg: "expected term after OR", wantErr: assert.Error},
+		{name: "dangling or with trailing space", input: "a OR ", wantMsg: "expected term after OR", wantErr: assert.Error},
+		{
+			name:    "dangling not",
+			input:   "NOT",
+			wantMsg: `expected simple term after negation "NOT"`,
+			wantErr: assert.Error,
+		},
+
+		{name: "unterminated single quote", input: `name = 'hello`, wantErr: assert.Error},
+		{name: "unterminated double quote", input: `name = "hello`, wantErr: assert.Error},
+		{name: "escape at the end of a single quoted body", input: `name = 'hello\`, wantErr: assert.Error},
+		{name: "escape at the end of a double quoted body", input: `name = "hello\`, wantErr: assert.Error},
+		{name: "invalid escape in a single quoted body", input: `name = '\q'`, wantErr: assert.Error},
 	}
 
 	for _, test := range tests {
@@ -81,35 +182,21 @@ func TestParseFilter(t *testing.T) {
 			got, err := ParseFilter(test.input)
 			test.wantErr(t, err)
 			if err != nil {
+				if test.wantMsg != "" {
+					assert.Equal(t, test.wantMsg, err.Error())
+				}
 				return
 			}
-			assert.Equal(t, test.want, got.String())
-		})
-	}
-}
-
-func TestMember(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name       string
-		input      string
-		wantPath   string
-		wantQuoted bool
-	}{
-		{name: "identifier", input: "name", wantPath: "name"},
-		{name: "dotted", input: "user.name", wantPath: "user.name"},
-		{name: "number split on the dot", input: "1.5", wantPath: "1.5"},
-		{name: "quoted", input: `"a b"`, wantPath: "a b", wantQuoted: true},
-		{name: "quoted field", input: `user."odd name"`, wantPath: "user.odd name", wantQuoted: true},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			f, err := ParseFilter(test.input)
-			assert.NoError(t, err)
-			member := f.Expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction.Member
-			assert.Equal(t, test.wantPath, member.Path())
-			assert.Equal(t, test.wantQuoted, member.Quoted())
+			if test.want != "" {
+				assert.Equal(t, test.want, got.String())
+			}
+			if test.wantGroup != "" || got.Expression == nil {
+				assert.Equal(t, test.wantGroup, render(got))
+			}
+			if got.Expression == nil {
+				// A filter carrying no expression renders as a nil one does.
+				assert.Equal(t, (*Filter)(nil).String(), got.String())
+			}
 		})
 	}
 }
@@ -179,130 +266,98 @@ func group(parts []string, sep string) string {
 	return "(" + strings.Join(parts, sep) + ")"
 }
 
-func TestParseFilter_Grouping(t *testing.T) {
+func TestMember_Path(t *testing.T) {
 	t.Parallel()
-
+	const unicode = "Hello 世界 "
 	tests := []struct {
-		name    string
-		input   string
+		name  string
+		input string
+		// fromArg reads the argument's member instead of the restriction's.
+		fromArg bool
 		want    string
-		wantErr assert.ErrorFunc
 	}{
-		{name: "empty", input: " \n\t", want: "", wantErr: assert.NoError},
-		{name: "comparison", input: "price >= 12.5", want: "price >= 12.5", wantErr: assert.NoError},
+		{name: "identifier", input: "name", want: "name"},
+		{name: "dotted", input: "user.name", want: "user.name"},
+		{name: "number split on the dot", input: "1.5", want: "1.5"},
+		{name: "quoted", input: `"a b"`, want: "a b"},
+		{name: "quoted field", input: `user."odd name"`, want: "user.odd name"},
+
+		{name: "empty double quoted body", input: `name = ""`, fromArg: true, want: ""},
+		{name: "empty single quoted body", input: "name = ''", fromArg: true, want: ""},
 		{
-			name:    "all comparison operators",
-			input:   "a != 1 AND b < 2 AND c <= 3 AND d > 4",
-			want:    "(a != 1 AND b < 2 AND c <= 3 AND d > 4)",
-			wantErr: assert.NoError,
+			name:    "long unicode double quoted body",
+			input:   `name = "` + strings.Repeat(unicode, 1000) + `"`,
+			fromArg: true,
+			want:    strings.Repeat(unicode, 1000),
 		},
-		{name: "minimum int64", input: "value = -9223372036854775808", want: "value = -9223372036854775808", wantErr: assert.NoError},
-		{name: "maximum uint64", input: "value = 18446744073709551615", want: "value = 18446744073709551615", wantErr: assert.NoError},
-		{name: "negative number is not a negation", input: "total > -30", want: "total > -30", wantErr: assert.NoError},
-		{name: "escaped unicode string", input: `name = "line\n世界"`, want: `name = "line\n世界"`, wantErr: assert.NoError},
-		{name: "escaped quote", input: `"a\"b"`, want: `"a\"b"`, wantErr: assert.NoError},
-		{name: "multi rune single quoted literal", input: `'it\'s'`, wantErr: assert.Error},
-		{name: "double quote inside single quotes", input: `'a"b'`, wantErr: assert.Error},
-		{name: "escaped wildcard is not a Go escape", input: `name = "a\*b"`, wantErr: assert.Error},
-		{name: "quoted keyword is text", input: `"and"`, want: `"and"`, wantErr: assert.NoError},
-		{name: "aip precedence", input: "a = 1 OR b = 2 AND c = 3", want: "((a = 1 OR b = 2) AND c = 3)", wantErr: assert.NoError},
-		{name: "sequence", input: `"blue" "chair"`, want: `("blue" "chair")`, wantErr: assert.NoError},
-		{name: "word text", input: "chair", want: "chair", wantErr: assert.NoError},
-		{name: "negation", input: "-deleted = true", want: "-deleted = true", wantErr: assert.NoError},
 		{
-			name:    "not and literal values",
-			input:   "NOT (active = false OR deleted = null)",
-			want:    "-(active = false OR deleted = null)",
-			wantErr: assert.NoError,
+			name:    "long unicode single quoted body",
+			input:   "name = '" + strings.Repeat(unicode, 1000) + "'",
+			fromArg: true,
+			want:    strings.Repeat(unicode, 1000),
 		},
-		{name: "field value", input: "state = active", want: "state = active", wantErr: assert.NoError},
-		{name: "parenthesized", input: "(a = 1)", want: "a = 1", wantErr: assert.NoError},
-		{name: "trailing whitespace", input: "a ", want: "a", wantErr: assert.NoError},
-		{name: "terminal wildcard", input: `labels.* = "value"`, want: `labels.* = "value"`, wantErr: assert.NoError},
-		{name: "exponent", input: "1e+2", want: "1e+2", wantErr: assert.NoError},
-		{name: "has", input: `tags:"blue"`, want: `tags : "blue"`, wantErr: assert.NoError},
-		{name: "has bare identifier", input: "tags:blue", want: "tags : blue", wantErr: assert.NoError},
-		{name: "has dotted path", input: `metadata.tags:"blue"`, want: `metadata.tags : "blue"`, wantErr: assert.NoError},
-		{name: "negated has", input: `NOT tags:"blue"`, want: `-tags : "blue"`, wantErr: assert.NoError},
-		{name: "question mark escape is not a Go escape", input: `'a\?b'`, wantErr: assert.Error},
-		// Values carry no type until a schema reads them, so a filter the old
-		// parser rejected while converting a literal now parses and is refused
-		// by the schema instead.
-		{name: "integer overflow", input: "value = 18446744073709551616", want: "value = 18446744073709551616", wantErr: assert.NoError},
-		{name: "malformed number", input: "value = 1e", want: "value = 1e", wantErr: assert.NoError},
-		{name: "lowercase and is a sequence", input: "a = 1 and b = 2", want: "(a = 1 and b = 2)", wantErr: assert.NoError},
-		{name: "wildcard inside path", input: "labels.*.value = 1", want: "labels.*.value = 1", wantErr: assert.NoError},
-
-		{name: "double negation is not a term", input: `NOT NOT name = "x"`, wantErr: assert.Error},
-		{name: "function call syntax", input: "distance(location, point) < 10", wantErr: assert.Error},
-		{name: "comma where a value is expected", input: "age = ,", wantErr: assert.Error},
-		{name: "leading comma", input: ",", wantErr: assert.Error},
-		{name: "comma after a complete expression", input: "a = 1, b = 2", wantErr: assert.Error},
-		{name: "invalid operator", input: "active ! true", wantErr: assert.Error},
-		{name: "invalid string escape", input: `name = "\q"`, wantErr: assert.Error},
-		{name: "unbalanced composite", input: "(a = 1", wantErr: assert.Error},
-		{name: "empty composite", input: "()", wantErr: assert.Error},
-		{name: "not without operand", input: "NOT ", wantErr: assert.Error},
-		{name: "minus without operand", input: "-", wantErr: assert.Error},
-		{name: "and without right operand", input: "a = 1 AND ", wantErr: assert.Error},
-		{name: "and before invalid operand", input: "a = 1 AND )", wantErr: assert.Error},
-		{name: "sequence before invalid operand", input: "a (", wantErr: assert.Error},
-		{name: "or without right operand", input: "a = 1 OR ", wantErr: assert.Error},
-		{name: "or before invalid operand", input: "a = 1 OR )", wantErr: assert.Error},
-		{name: "unexpected closing parenthesis", input: "a)", wantErr: assert.Error},
-		{name: "invalid traversal", input: "a. = 1", wantErr: assert.Error},
-
-		// Whitespace is significant between the factors of a sequence, around
-		// AND and OR, and after a negating '-', which abuts what it negates.
-		{name: "detached negation", input: "- 30", wantErr: assert.Error},
-		{name: "detached negation of a restriction", input: "- a = 1", wantErr: assert.Error},
-		{name: "detached negation of a composite", input: "- (a = 1)", wantErr: assert.Error},
-		{name: "whitespace around a traversal", input: "a . b", wantErr: assert.Error},
-		{name: "whitespace after a traversal", input: "a. b", wantErr: assert.Error},
-		{name: "whitespace before a traversal", input: "a .b", wantErr: assert.Error},
-		{name: "number split by whitespace", input: "value = 1 .5", wantErr: assert.Error},
-		{name: "factors without whitespace", input: `"a"b`, wantErr: assert.Error},
-		{name: "composites without whitespace", input: "(a)(b)", wantErr: assert.Error},
-		{name: "composite without whitespace", input: "a(b)", wantErr: assert.Error},
-		{name: "and without whitespace before it", input: "(a)AND b", wantErr: assert.Error},
-		{name: "or without whitespace before it", input: `"x"OR y`, wantErr: assert.Error},
-		{name: "negation without whitespace before it", input: "(a)NOT b", wantErr: assert.Error},
-
-		{name: "attached negation", input: "-30", want: "-30", wantErr: assert.NoError},
-		{name: "duration", input: "wait < 2h", want: "wait < 2h", wantErr: assert.NoError},
-		{name: "traversal", input: "a.b = 1", want: "a.b = 1", wantErr: assert.NoError},
-		{name: "and between composites", input: "(a) AND (b)", want: "(a AND b)", wantErr: assert.NoError},
+		{
+			name:    "escapes in a double quoted body",
+			input:   `name = "line\n\t\r\\\u4e16\x41"`,
+			fromArg: true,
+			want:    "line\n\t\r\\世A",
+		},
+		{
+			name:    "escapes in a single quoted body",
+			input:   `name = 'line\n\t\r\\\u4e16\x41'`,
+			fromArg: true,
+			want:    "line\n\t\r\\世A",
+		},
+		{name: "both quotes escaped in a double quoted body", input: `name = "\'\""`, fromArg: true, want: `'"`},
+		{name: "both quotes escaped in a single quoted body", input: `name = '\'\"'`, fromArg: true, want: `'"`},
+		{name: "escaped wildcard in a double quoted body", input: `name = "a\*b"`, fromArg: true, want: "a*b"},
+		{name: "escaped wildcard in a single quoted body", input: `name = 'a\*b'`, fromArg: true, want: "a*b"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := ParseFilter(test.input)
-			test.wantErr(t, err)
-			if err != nil {
-				return
-			}
-			assert.Equal(t, test.want, render(got))
+			assert.Equal(t, test.want, testMember(t, test.input, test.fromArg).Path())
 		})
 	}
 }
 
-func TestParseFilter_Rendering(t *testing.T) {
+func TestMember_Quoted(t *testing.T) {
 	t.Parallel()
+	tests := []struct {
+		name    string
+		input   string
+		fromArg bool
+		want    bool
+	}{
+		{name: "identifier", input: "name"},
+		{name: "dotted", input: "user.name"},
+		{name: "number split on the dot", input: "1.5"},
+		{name: "quoted", input: `"a b"`, want: true},
+		{name: "quoted field", input: `user."odd name"`, want: true},
+		{name: "double quoted argument", input: `name = "bob"`, fromArg: true, want: true},
+		{name: "single quoted argument", input: "name = 'bob'", fromArg: true, want: true},
+		{name: "bare argument", input: "name = bob", fromArg: true},
+	}
 
-	// The rendering a filter reports is what the cursor binding is taken over,
-	// so it comes from the tree: two spellings of one filter render alike.
-	spaced, err := ParseFilter("  a = 1  ")
-	assert.NoError(t, err)
-	tight, err := ParseFilter("a=1")
-	assert.NoError(t, err)
-	assert.Equal(t, spaced.String(), tight.String())
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, test.want, testMember(t, test.input, test.fromArg).Quoted())
+		})
+	}
+}
 
-	// A blank filter carries no expression, and renders the same as a nil one.
-	empty, err := ParseFilter("   ")
+// testMember parses one restriction and hands back the member a row addresses.
+func testMember(t *testing.T, input string, fromArg bool) Member {
+	t.Helper()
+	filter, err := ParseFilter(input)
 	assert.NoError(t, err)
-	assert.Zero(t, empty.Expression)
-	assert.Equal(t, (*Filter)(nil).String(), empty.String())
+	restriction := filter.Expression.Sequences[0].Factors[0].Terms[0].Simple.Restriction
+	if fromArg {
+		return restriction.Arg.Member
+	}
+	return restriction.Member
 }
 
 // FuzzParseFilter checks that no input panics, that a filter that parses is

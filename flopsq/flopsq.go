@@ -8,7 +8,6 @@ package flopsq
 
 import (
 	"fmt"
-	"math"
 
 	sq "github.com/Masterminds/squirrel"
 
@@ -23,15 +22,23 @@ const likeEscape = ` ESCAPE '\'`
 // Where builds the condition for a filter. An empty filter returns a nil
 // Sqlizer, which squirrel's Where ignores.
 func Where(s *flop.Schema, f *aip160.Filter) (sq.Sqlizer, error) {
-	expr, err := s.Compile(f)
+	expr, err := s.CompileFilter(f)
 	if err != nil {
 		return nil, err
 	}
 	return WhereExpr(expr)
 }
 
-// WhereExpr builds the condition for an already compiled filter.
+// WhereExpr builds the condition for a compiled filter. A nil root is valid;
+// malformed expressions return flop.ErrDeclaration before a Sqlizer is returned.
 func WhereExpr(e flop.Expr) (sq.Sqlizer, error) {
+	if err := flop.ValidateExpr(e); err != nil {
+		return nil, err
+	}
+	return whereExpr(e)
+}
+
+func whereExpr(e flop.Expr) (sq.Sqlizer, error) {
 	if e == nil {
 		return nil, nil
 	}
@@ -49,7 +56,7 @@ func WhereExpr(e flop.Expr) (sq.Sqlizer, error) {
 		}
 		return sq.Or(parts), nil
 	case flop.Not:
-		inner, err := WhereExpr(node.Expr)
+		inner, err := whereExpr(node.Expr)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +70,7 @@ func WhereExpr(e flop.Expr) (sq.Sqlizer, error) {
 func conditions(exprs []flop.Expr) ([]sq.Sqlizer, error) {
 	parts := make([]sq.Sqlizer, 0, len(exprs))
 	for _, expr := range exprs {
-		part, err := WhereExpr(expr)
+		part, err := whereExpr(expr)
 		if err != nil {
 			return nil, err
 		}
@@ -175,9 +182,8 @@ func OffsetQuery(
 // CursorQuery adds the filter, order, seek condition and limit of cursor
 // pagination. after is empty on the first page.
 //
-// The limit is pageSize plus the surplus row flop.Trim reads a next page from,
-// so a caller never writes that +1 itself. skip is the offset from the position
-// the cursor names that AIP-158 allows.
+// The limit is pageSize+1, including the surplus row [flop.Schema.NewCursorPage]
+// uses to detect a next page. skip offsets from the cursor position.
 func CursorQuery(
 	b sq.SelectBuilder,
 	s *flop.Schema,
@@ -203,12 +209,7 @@ func CursorQuery(
 	if seek != nil {
 		b = b.Where(seek)
 	}
-	// The surplus row saturates rather than wrapping at the largest page size.
-	limit := uint64(pageSize)
-	if pageSize < math.MaxInt32 {
-		limit++
-	}
-	b = b.Limit(limit)
+	b = b.Limit(uint64(pageSize) + 1)
 	if skip > 0 {
 		b = b.Offset(uint64(skip))
 	}

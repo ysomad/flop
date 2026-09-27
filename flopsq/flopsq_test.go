@@ -209,10 +209,11 @@ func TestOrderBy(t *testing.T) {
 		order []aip132.OrderBy
 	}
 	tests := []struct {
-		name    string
-		args    args
-		want    []string
-		wantErr assert.ErrorFunc
+		name         string
+		args         args
+		want         []string
+		wantSentinel error
+		wantErr      assert.ErrorFunc
 	}{
 		{name: "empty", args: args{}, wantErr: assert.NoError},
 		{
@@ -239,6 +240,12 @@ func TestOrderBy(t *testing.T) {
 			args:    args{order: []aip132.OrderBy{activeAsc}},
 			wantErr: assert.Error,
 		},
+		{
+			name:         "repeated field",
+			args:         args{order: []aip132.OrderBy{idAsc, idAsc}},
+			wantSentinel: flop.ErrInvalidOrder,
+			wantErr:      assert.Error,
+		},
 	}
 
 	for _, test := range tests {
@@ -247,6 +254,9 @@ func TestOrderBy(t *testing.T) {
 			got, gotErr := flopsq.OrderBy(schema, test.args.order)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
 				return
 			}
 			assert.Equal(t, test.want, got)
@@ -394,15 +404,15 @@ func TestQuery(t *testing.T) {
 			wantArgs: []any{true},
 		},
 		{
-			// ParseOrder appends the unique field, so the order is total.
+			// Parsing preserves exactly the requested terms.
 			name: "order only",
 			args: args{order: "created_at desc"},
-			want: "SELECT * FROM users u ORDER BY u.created_at DESC, u.id",
+			want: "SELECT * FROM users u ORDER BY u.created_at DESC",
 		},
 		{
 			name:     "filter and order",
 			args:     args{filter: `display_name:"bob"`, order: "created_at desc"},
-			want:     `SELECT * FROM users u WHERE u.name LIKE $1 ESCAPE '\' ORDER BY u.created_at DESC, u.id`,
+			want:     `SELECT * FROM users u WHERE u.name LIKE $1 ESCAPE '\' ORDER BY u.created_at DESC`,
 			wantArgs: []any{"%bob%"},
 		},
 	}
@@ -445,6 +455,16 @@ func TestQuery(t *testing.T) {
 		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, order, nil)
 		assert.Error(t, err)
 	})
+
+	t.Run("repeated ordering field", func(t *testing.T) {
+		t.Parallel()
+		order, err := aip132.ParseOrderBy("id")
+		assert.NoError(t, err)
+		_, err = flopsq.Query(
+			sq.Select("*").From("users u"), schema, append(order, order...), nil,
+		)
+		assert.IsError(t, err, flop.ErrInvalidOrder)
+	})
 }
 
 func TestOffsetQuery(t *testing.T) {
@@ -453,6 +473,7 @@ func TestOffsetQuery(t *testing.T) {
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
+	order = schema.TotalOrder(order)
 	invalidFilter, err := aip160.ParseFilter("nope = 1")
 	assert.NoError(t, err)
 	invalidOrder, err := aip132.ParseOrderBy("nope")
@@ -465,11 +486,12 @@ func TestOffsetQuery(t *testing.T) {
 		pageSize int32
 	}
 	tests := []struct {
-		name     string
-		args     args
-		want     string
-		wantArgs []any
-		wantErr  assert.ErrorFunc
+		name         string
+		args         args
+		want         string
+		wantArgs     []any
+		wantSentinel error
+		wantErr      assert.ErrorFunc
 	}{
 		{
 			name: "page",
@@ -480,14 +502,16 @@ func TestOffsetQuery(t *testing.T) {
 			wantErr:  assert.NoError,
 		},
 		{
-			name:    "negative page",
-			args:    args{page: -1, pageSize: 20},
-			wantErr: assert.Error,
+			name:         "negative page",
+			args:         args{page: -1, pageSize: 20},
+			wantSentinel: flop.ErrInvalidPage,
+			wantErr:      assert.Error,
 		},
 		{
-			name:    "non-positive page size",
-			args:    args{page: 1},
-			wantErr: assert.Error,
+			name:         "non-positive page size",
+			args:         args{page: 1},
+			wantSentinel: flop.ErrInvalidPageSize,
+			wantErr:      assert.Error,
 		},
 		{
 			name:    "invalid filter",
@@ -498,6 +522,12 @@ func TestOffsetQuery(t *testing.T) {
 			name:    "invalid order",
 			args:    args{order: invalidOrder, page: 1, pageSize: 20},
 			wantErr: assert.Error,
+		},
+		{
+			name:         "repeated ordering field",
+			args:         args{order: append(append([]aip132.OrderBy{}, order...), order...), page: 1, pageSize: 20},
+			wantSentinel: flop.ErrInvalidOrder,
+			wantErr:      assert.Error,
 		},
 	}
 
@@ -510,6 +540,9 @@ func TestOffsetQuery(t *testing.T) {
 			)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
 				return
 			}
 			got, gotArgs, err := b.ToSql()
@@ -526,6 +559,7 @@ func TestCursorQuery(t *testing.T) {
 	assert.NoError(t, err)
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
+	order = schema.TotalOrder(order)
 	token, err := schema.EncodeCursor(user{ID: 7, CreatedAt: createdAt}, order, filter)
 	assert.NoError(t, err)
 	after, err := schema.DecodeCursor(token, order, filter)
@@ -536,6 +570,23 @@ func TestCursorQuery(t *testing.T) {
 	assert.NoError(t, err)
 	nonUniqueOrder, err := aip132.ParseOrderBy("created_at")
 	assert.NoError(t, err)
+	// A composite key is only complete once the order names every field of it,
+	// so a seek under part of one has nothing to compare.
+	composite := flop.NewSchema(
+		flop.NewField("id").Ref("u.id").Int().Sortable().Value(func(u user) any { return u.ID }),
+		flop.NewField("created_at").
+			Ref("u.created_at").
+			Time().
+			Sortable().
+			Value(func(u user) any { return u.CreatedAt }),
+		flop.NewField("rating").Ref("u.rating").Float().Sortable().Value(func(u user) any { return u.Rating }),
+	).CompositeKey("id", "created_at").MustBuild()
+	compositeIDOnly, err := composite.ParseOrder("id")
+	assert.NoError(t, err)
+	compositeTimeOnly, err := composite.ParseOrder("created_at")
+	assert.NoError(t, err)
+	compositePartial, err := composite.ParseOrder("id, rating")
+	assert.NoError(t, err)
 
 	type args struct {
 		order    []aip132.OrderBy
@@ -545,11 +596,13 @@ func TestCursorQuery(t *testing.T) {
 		skip     int32
 	}
 	tests := []struct {
-		name     string
-		args     args
-		want     string
-		wantArgs []any
-		wantErr  assert.ErrorFunc
+		name         string
+		schema       *flop.Schema
+		args         args
+		want         string
+		wantArgs     []any
+		wantSentinel error
+		wantErr      assert.ErrorFunc
 	}{
 		{
 			name: "first page",
@@ -569,20 +622,22 @@ func TestCursorQuery(t *testing.T) {
 			wantErr:  assert.NoError,
 		},
 		{
-			name:    "maximum page size saturates the surplus row",
+			name:    "maximum page size includes the surplus row",
 			args:    args{order: order, pageSize: math.MaxInt32},
-			want:    "SELECT * FROM users u ORDER BY u.created_at DESC, u.id LIMIT 2147483647",
+			want:    "SELECT * FROM users u ORDER BY u.created_at DESC, u.id LIMIT 2147483648",
 			wantErr: assert.NoError,
 		},
 		{
-			name:    "non-positive page size",
-			args:    args{order: order},
-			wantErr: assert.Error,
+			name:         "non-positive page size",
+			args:         args{order: order},
+			wantSentinel: flop.ErrInvalidPageSize,
+			wantErr:      assert.Error,
 		},
 		{
-			name:    "negative skip",
-			args:    args{order: order, pageSize: 2, skip: -1},
-			wantErr: assert.Error,
+			name:         "negative skip",
+			args:         args{order: order, pageSize: 2, skip: -1},
+			wantSentinel: flop.ErrInvalidSkip,
+			wantErr:      assert.Error,
 		},
 		{
 			name:    "invalid filter",
@@ -599,24 +654,133 @@ func TestCursorQuery(t *testing.T) {
 			args:    args{order: nonUniqueOrder, pageSize: 2},
 			wantErr: assert.Error,
 		},
+		{
+			name:         "repeated ordering field",
+			args:         args{order: append(append([]aip132.OrderBy{}, order...), order...), pageSize: 2},
+			wantSentinel: flop.ErrInvalidOrder,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "composite key without its time field",
+			schema:       composite,
+			args:         args{order: compositeIDOnly, pageSize: 1},
+			wantSentinel: flop.ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "composite key without its id field",
+			schema:       composite,
+			args:         args{order: compositeTimeOnly, pageSize: 1},
+			wantSentinel: flop.ErrDeclaration,
+			wantErr:      assert.Error,
+		},
+		{
+			name:         "composite key beside another field",
+			schema:       composite,
+			args:         args{order: compositePartial, pageSize: 1},
+			wantSentinel: flop.ErrDeclaration,
+			wantErr:      assert.Error,
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
+			s := test.schema
+			if s == nil {
+				s = schema
+			}
 			b, gotErr := flopsq.CursorQuery(
 				sq.Select("*").From("users u").PlaceholderFormat(sq.Dollar),
-				schema, test.args.order, test.args.filter, test.args.after,
+				s, test.args.order, test.args.filter, test.args.after,
 				test.args.pageSize, test.args.skip,
 			)
 			test.wantErr(t, gotErr)
 			if gotErr != nil {
+				if test.wantSentinel != nil {
+					assert.IsError(t, gotErr, test.wantSentinel)
+				}
 				return
 			}
 			got, gotArgs, err := b.ToSql()
 			assert.NoError(t, err)
 			assert.Equal(t, test.want, got)
 			assert.Equal(t, test.wantArgs, gotArgs)
+		})
+	}
+}
+
+type unsupportedExpr struct{ flop.Expr }
+
+func TestWhereExpr(t *testing.T) {
+	t.Parallel()
+	field := schema.Fields()[0]
+	cmp := flop.Cmp{Field: field, Op: flop.OpEq, Value: int64(1)}
+
+	type args struct {
+		expr flop.Expr
+	}
+	tests := []struct {
+		name     string
+		args     args
+		want     string
+		wantArgs []any
+		wantErr  assert.ErrorFunc
+	}{
+		{
+			name:     "comparison",
+			args:     args{expr: cmp},
+			want:     "u.id = ?",
+			wantArgs: []any{int64(1)},
+			wantErr:  assert.NoError,
+		},
+		{name: "empty and", args: args{expr: flop.And{}}, wantErr: assert.Error},
+		{name: "empty or", args: args{expr: flop.Or{}}, wantErr: assert.Error},
+		{name: "nil and operand", args: args{expr: flop.And{Exprs: []flop.Expr{cmp, nil}}}, wantErr: assert.Error},
+		{name: "nil or operand", args: args{expr: flop.Or{Exprs: []flop.Expr{nil}}}, wantErr: assert.Error},
+		{name: "nil not operand", args: args{expr: flop.Not{}}, wantErr: assert.Error},
+		{name: "no field", args: args{expr: flop.Cmp{Op: flop.OpEq}}, wantErr: assert.Error},
+		{
+			name:    "zero field",
+			args:    args{expr: flop.Cmp{Field: &flop.Field{}, Op: flop.OpEq}},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "unknown op",
+			args:    args{expr: flop.Cmp{Field: field, Op: flop.Op(99), Value: int64(1)}},
+			wantErr: assert.Error,
+		},
+		{name: "null range", args: args{expr: flop.Cmp{Field: field, Op: flop.OpGt}}, wantErr: assert.Error},
+		{name: "null like", args: args{expr: flop.Cmp{Field: field, Op: flop.OpLike}}, wantErr: assert.Error},
+		{name: "pointer node", args: args{expr: &cmp}, wantErr: assert.Error},
+		{name: "typed nil", args: args{expr: (*flop.Cmp)(nil)}, wantErr: assert.Error},
+		{name: "unsupported node", args: args{expr: unsupportedExpr{}}, wantErr: assert.Error},
+		{
+			name:    "unsupported value",
+			args:    args{expr: flop.Cmp{Field: field, Op: flop.OpEq, Value: []int{1}}},
+			wantErr: assert.Error,
+		},
+		{
+			name:    "non string like",
+			args:    args{expr: flop.Cmp{Field: field, Op: flop.OpLike, Value: int64(1)}},
+			wantErr: assert.Error,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got, gotErr := flopsq.WhereExpr(test.args.expr)
+			test.wantErr(t, gotErr)
+			if gotErr != nil {
+				assert.IsError(t, gotErr, flop.ErrDeclaration)
+				assert.Equal(t, sq.Sqlizer(nil), got)
+				return
+			}
+			sql, args, err := got.ToSql()
+			assert.NoError(t, err)
+			assert.Equal(t, test.want, sql)
+			assert.Equal(t, test.wantArgs, args)
 		})
 	}
 }
