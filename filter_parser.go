@@ -15,7 +15,7 @@
 // Modified in 2026 by the flop authors. See NOTICE for source and attribution
 // details.
 
-package aip160
+package flop
 
 // This file contains a lexer and parser for AIP-160 filter expressions.
 // The EBNF is at https://google.aip.dev/assets/misc/ebnf-filtering.txt
@@ -196,20 +196,20 @@ func (p *parser) lex() (*token, error) {
 // These are based on the EBNF at https://google.aip.dev/assets/misc/ebnf-filtering.txt
 // Note that the syntax for functions is not currently supported.
 type Filter struct {
-	Expression *Expression // Optional, may be nil.
+	expression *expression // Optional, may be nil.
 }
 
 func (v *Filter) String() string {
 	var s strings.Builder
 	s.WriteString("filter{")
-	if v != nil && v.Expression != nil {
-		s.WriteString(v.Expression.String())
+	if v != nil && v.expression != nil {
+		s.WriteString(v.expression.String())
 	}
 	s.WriteString("}")
 	return s.String()
 }
 
-// Expression may either be a conjunction (AND) of sequences or a simple
+// expression may either be a conjunction (AND) of sequences or a simple
 // sequence.
 //
 // Note, the AND is case-sensitive.
@@ -217,12 +217,12 @@ func (v *Filter) String() string {
 // Example: `a b AND c AND d`
 //
 // The expression `(a b) AND c AND d` is equivalent to the example.
-type Expression struct {
+type expression struct {
 	// Sequences are always joined by an AND operator
-	Sequences []Sequence
+	Sequences []sequence
 }
 
-func (v *Expression) String() string {
+func (v *expression) String() string {
 	var s strings.Builder
 	s.WriteString("expression{")
 	for i, c := range v.Sequences {
@@ -235,7 +235,7 @@ func (v *Expression) String() string {
 	return s.String()
 }
 
-// Sequence is composed of one or more whitespace (WS) separated factors.
+// sequence is composed of one or more whitespace (WS) separated factors.
 //
 // A sequence expresses a logical relationship between 'factors' where
 // the ranking of a filter result may be scored according to the number
@@ -249,12 +249,12 @@ func (v *Expression) String() string {
 //
 // The expression `New York (Giants OR Yankees)` is equivalent to the
 // example.
-type Sequence struct {
+type sequence struct {
 	// Factors are always joined by an (implicit) AND operator
-	Factors []Factor
+	Factors []factor
 }
 
-func (v Sequence) String() string {
+func (v sequence) String() string {
 	var s strings.Builder
 	s.WriteString("sequence{")
 	for i, c := range v.Factors {
@@ -267,17 +267,17 @@ func (v Sequence) String() string {
 	return s.String()
 }
 
-// Factor may either be a disjunction (OR) of terms or a simple term.
+// factor may either be a disjunction (OR) of terms or a simple term.
 //
 // Note, the OR is case-sensitive.
 //
 // Example: `a < 10 OR a >= 100`
-type Factor struct {
+type factor struct {
 	// Terms are always joined by an OR operator
-	Terms []Term
+	Terms []term
 }
 
-func (v Factor) String() string {
+func (v factor) String() string {
 	var s strings.Builder
 	s.WriteString("factor{")
 	for i, c := range v.Terms {
@@ -290,7 +290,7 @@ func (v Factor) String() string {
 	return s.String()
 }
 
-// Term may either be unary or simple expressions.
+// term may either be unary or simple expressions.
 //
 // Unary expressions negate the simple expression, either mathematically `-`
 // or logically `NOT`. The negation styles may be used interchangeably.
@@ -302,12 +302,12 @@ func (v Factor) String() string {
 // * logical not     : `NOT (a OR b)`
 // * alternative not : `-file:".java"`
 // * negation        : `-30`
-type Term struct {
+type term struct {
 	Negated bool
-	Simple  Simple
+	Simple  simple
 }
 
-func (v Term) String() string {
+func (v term) String() string {
 	var s strings.Builder
 	s.WriteString("term{")
 	if v.Negated {
@@ -318,18 +318,18 @@ func (v Term) String() string {
 	return s.String()
 }
 
-// Simple expressions may either be a restriction or a nested (composite)
+// simple expressions may either be a restriction or a nested (composite)
 // expression.
-type Simple struct {
-	Restriction *Restriction
+type simple struct {
+	Restriction *restriction
 	// Composite is a parenthesized expression, commonly used to group
 	// terms or clarify operator precedence.
 	//
 	// Example: `(msg.endsWith('world') AND retries < 10)`
-	Composite *Expression
+	Composite *expression
 }
 
-func (v Simple) String() string {
+func (v simple) String() string {
 	var s strings.Builder
 	s.WriteString("simple{")
 	if v.Restriction != nil {
@@ -345,7 +345,7 @@ func (v Simple) String() string {
 	return s.String()
 }
 
-// Restriction express a relationship between a comparable value and a
+// restriction express a relationship between a comparable value and a
 // single argument. When the restriction only specifies a comparable
 // without an operator, this is a global restriction.
 //
@@ -366,14 +366,14 @@ func (v Simple) String() string {
 // that it can test for presence or value based on the proto3 type of
 // the `comparable` value. The has operator is useful for validating the
 // structure and contents of complex values.
-type Restriction struct {
-	Member Member
+type restriction struct {
+	Member member
 	// Comparators supported by list filters: <=, <. >=, >, !=, =, :
 	Comparator string
-	Arg        *Arg
+	Arg        *arg
 }
 
-func (v *Restriction) String() string {
+func (v *restriction) String() string {
 	var s strings.Builder
 	s.WriteString("restriction{")
 	s.WriteString(v.Member.String())
@@ -389,16 +389,16 @@ func (v *Restriction) String() string {
 	return s.String()
 }
 
-type Arg struct {
-	Member Member
+type arg struct {
+	Member member
 	// Composite is a parenthesized expression, commonly used to group
 	// terms or clarify operator precedence.
 	//
 	// Example: `(msg.endsWith('world') AND retries < 10)`
-	Composite *Expression
+	Composite *expression
 }
 
-func (v *Arg) String() string {
+func (v *arg) String() string {
 	var s strings.Builder
 	s.WriteString("arg{")
 	if v.Composite != nil {
@@ -410,15 +410,15 @@ func (v *Arg) String() string {
 	return s.String()
 }
 
-// Member expressions are either value or DOT qualified field references.
+// member expressions are either value or DOT qualified field references.
 //
 // Example: `expr.type_map.1.type`
-type Member struct {
-	Value  Value
-	Fields []Value
+type member struct {
+	Value  value
+	Fields []value
 }
 
-func (v Member) String() string {
+func (v member) String() string {
 	var s strings.Builder
 	s.WriteString("member{")
 	s.WriteString(v.Value.String())
@@ -439,7 +439,7 @@ func (v Member) String() string {
 }
 
 // Input returns the input text used to produce the value, for used in errors.
-func (v Member) Input() string {
+func (v member) Input() string {
 	var s strings.Builder
 	s.WriteString(v.Value.Input())
 	for _, f := range v.Fields {
@@ -455,7 +455,7 @@ func (v Member) Input() string {
 // an argument the lexer split on a dot, such as the float 1.5 or the duration
 // 1.5s. Input renders the same segments as filter source, re-quoting the
 // quoted ones, so it cannot serve either purpose.
-func (v Member) Path() string {
+func (v member) Path() string {
 	if len(v.Fields) == 0 {
 		return v.Value.Value
 	}
@@ -470,7 +470,7 @@ func (v Member) Path() string {
 
 // Quoted reports whether any segment of the member was a quoted string. A
 // quoted argument is text and never a number, a bool, or the null literal.
-func (v Member) Quoted() bool {
+func (v member) Quoted() bool {
 	if v.Value.Quoted {
 		return true
 	}
@@ -482,7 +482,7 @@ func (v Member) Quoted() bool {
 	return false
 }
 
-// Value may either be a TEXT or STRING.
+// value may either be a TEXT or STRING.
 //
 // TEXT is a free-form set of characters without whitespace (WS)
 // or . (DOT) within it. The text may represent a variable, string,
@@ -492,12 +492,12 @@ func (v Member) Quoted() bool {
 // STRING is a quoted string which may or may not contain a special
 // wildcard `*` character at the beginning or end of the string to
 // indicate a prefix or suffix-based search within a restriction.
-type Value struct {
+type value struct {
 	Quoted bool
 	Value  string
 }
 
-func (v Value) String() string {
+func (v value) String() string {
 	var s strings.Builder
 	s.WriteString("value{")
 	if v.Quoted {
@@ -509,7 +509,7 @@ func (v Value) String() string {
 }
 
 // Input returns the input text used to produce the value, for used in errors.
-func (v Value) Input() string {
+func (v value) Input() string {
 	if v.Quoted {
 		// Note this is currently not identical as it may not reproduce the
 		// exact set of escape sequences but it is close enough.
@@ -594,10 +594,10 @@ func (p *parser) filter() (*Filter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Filter{Expression: e}, p.expect(kindEnd)
+	return &Filter{expression: e}, p.expect(kindEnd)
 }
 
-func (p *parser) expression() (*Expression, error) {
+func (p *parser) expression() (*expression, error) {
 	s, ok, err := p.sequence()
 	if err != nil {
 		return nil, err
@@ -605,7 +605,7 @@ func (p *parser) expression() (*Expression, error) {
 	if !ok {
 		return nil, nil
 	}
-	e := &Expression{}
+	e := &expression{}
 	e.Sequences = append(e.Sequences, s)
 	for {
 		if err := p.expectSpaceBefore(kindAnd); err != nil {
@@ -630,21 +630,21 @@ func (p *parser) expression() (*Expression, error) {
 	return e, nil
 }
 
-func (p *parser) sequence() (Sequence, bool, error) {
-	var s Sequence
+func (p *parser) sequence() (sequence, bool, error) {
+	var s sequence
 	for {
 		if len(s.Factors) > 0 {
 			t, err := p.peek()
 			if err != nil {
-				return Sequence{}, false, err
+				return sequence{}, false, err
 			}
 			if startsFactor(t.kind) && !t.space {
-				return Sequence{}, false, fmt.Errorf("expected whitespace before %s(%q)", t.kind, t.value)
+				return sequence{}, false, fmt.Errorf("expected whitespace before %s(%q)", t.kind, t.value)
 			}
 		}
 		f, ok, err := p.factor()
 		if err != nil {
-			return Sequence{}, false, err
+			return sequence{}, false, err
 		}
 		if !ok {
 			break
@@ -652,92 +652,92 @@ func (p *parser) sequence() (Sequence, bool, error) {
 		s.Factors = append(s.Factors, f)
 	}
 	if len(s.Factors) == 0 {
-		return Sequence{}, false, nil
+		return sequence{}, false, nil
 	}
 	return s, true, nil
 }
 
-func (p *parser) factor() (Factor, bool, error) {
+func (p *parser) factor() (factor, bool, error) {
 	t, ok, err := p.term()
 	if err != nil {
-		return Factor{}, false, err
+		return factor{}, false, err
 	}
 	if !ok {
-		return Factor{}, false, nil
+		return factor{}, false, nil
 	}
-	var f Factor
+	var f factor
 	f.Terms = append(f.Terms, t)
 	for {
 		if err := p.expectSpaceBefore(kindOr); err != nil {
-			return Factor{}, false, err
+			return factor{}, false, err
 		}
 		or, err := p.accept(kindOr)
 		if err != nil {
-			return Factor{}, false, err
+			return factor{}, false, err
 		}
 		if or == nil {
 			break
 		}
 		t, ok, err := p.term()
 		if err != nil {
-			return Factor{}, false, err
+			return factor{}, false, err
 		}
 		if !ok {
-			return Factor{}, false, fmt.Errorf("expected term after OR")
+			return factor{}, false, fmt.Errorf("expected term after OR")
 		}
 		f.Terms = append(f.Terms, t)
 	}
 	return f, true, nil
 }
 
-func (p *parser) term() (Term, bool, error) {
+func (p *parser) term() (term, bool, error) {
 	n, err := p.accept(kindNegate)
 	if err != nil {
-		return Term{}, false, err
+		return term{}, false, err
 	}
 	// A '-' negates what it abuts, so "- 30" is not a term. NOT is the other
 	// way around, and the lexer already required the whitespace after it.
 	if n != nil && n.value == "-" {
 		t, err := p.peek()
 		if err != nil {
-			return Term{}, false, err
+			return term{}, false, err
 		}
 		if t.space {
-			return Term{}, false, fmt.Errorf("unexpected whitespace after %q", n.value)
+			return term{}, false, fmt.Errorf("unexpected whitespace after %q", n.value)
 		}
 	}
 	s, ok, err := p.simple()
 	if err != nil {
-		return Term{}, false, err
+		return term{}, false, err
 	}
 	if !ok {
 		if n != nil {
-			return Term{}, false, fmt.Errorf("expected simple term after negation %q", n.value)
+			return term{}, false, fmt.Errorf("expected simple term after negation %q", n.value)
 		}
-		return Term{}, false, nil
+		return term{}, false, nil
 	}
-	return Term{Negated: n != nil, Simple: s}, true, nil
+	return term{Negated: n != nil, Simple: s}, true, nil
 }
 
-func (p *parser) simple() (Simple, bool, error) {
+func (p *parser) simple() (simple, bool, error) {
 	r, err := p.restriction()
 	if err != nil {
-		return Simple{}, false, err
+		return simple{}, false, err
 	}
 	if r != nil {
-		return Simple{Restriction: r}, true, nil
+		return simple{Restriction: r}, true, nil
 	}
 	c, err := p.composite()
 	if err != nil {
-		return Simple{}, false, err
+		return simple{}, false, err
 	}
 	if c != nil {
-		return Simple{Composite: c}, true, nil
+		return simple{Composite: c}, true, nil
 	}
-	return Simple{}, false, nil
+	return simple{}, false, nil
 }
 
-func (p *parser) restriction() (*Restriction, error) {
+func (p *parser) restriction() (*restriction, error) {
 	m, ok, err := p.member()
 	if err != nil {
 		return nil, err
@@ -750,7 +750,7 @@ func (p *parser) restriction() (*Restriction, error) {
 		return nil, err
 	}
 	if comparator == nil {
-		return &Restriction{Member: m}, nil
+		return &restriction{Member: m}, nil
 	}
 	arg, err := p.arg()
 	if err != nil {
@@ -759,44 +759,44 @@ func (p *parser) restriction() (*Restriction, error) {
 	if arg == nil {
 		return nil, fmt.Errorf("expected arg after %s", comparator.value)
 	}
-	return &Restriction{Member: m, Comparator: comparator.value, Arg: arg}, nil
+	return &restriction{Member: m, Comparator: comparator.value, Arg: arg}, nil
 }
 
-func (p *parser) member() (Member, bool, error) {
+func (p *parser) member() (member, bool, error) {
 	v, ok, err := p.value()
 	if err != nil {
-		return Member{}, false, err
+		return member{}, false, err
 	}
 	if !ok {
-		return Member{}, false, nil
+		return member{}, false, nil
 	}
 
-	m := Member{Value: v}
+	m := member{Value: v}
 	for {
 		if err := p.rejectSpaceBefore(kindDot); err != nil {
-			return Member{}, false, err
+			return member{}, false, err
 		}
 		dot, err := p.accept(kindDot)
 		if err != nil {
-			return Member{}, false, err
+			return member{}, false, err
 		}
 		if dot == nil {
 			break
 		}
 		t, err := p.peek()
 		if err != nil {
-			return Member{}, false, err
+			return member{}, false, err
 		}
 		if t.space {
-			return Member{}, false, fmt.Errorf("unexpected whitespace after %q", dot.value)
+			return member{}, false, fmt.Errorf("unexpected whitespace after %q", dot.value)
 		}
 
 		v, ok, err := p.value()
 		if err != nil {
-			return Member{}, false, err
+			return member{}, false, err
 		}
 		if !ok {
-			return Member{}, false, fmt.Errorf("expected value after '.'")
+			return member{}, false, fmt.Errorf("expected value after '.'")
 		}
 
 		m.Fields = append(m.Fields, v)
@@ -804,29 +804,29 @@ func (p *parser) member() (Member, bool, error) {
 	return m, true, nil
 }
 
-// value attempts to consume a Value from the input tokens, and reports whether
+// value attempts to consume a value from the input tokens, and reports whether
 // it read one.
-func (p *parser) value() (Value, bool, error) {
+func (p *parser) value() (value, bool, error) {
 	v, err := p.accept(kindString)
 	if err != nil {
-		return Value{}, false, err
+		return value{}, false, err
 	}
 	if v != nil {
 		v.value, err = unquoteString(v.value)
 		if err != nil {
-			return Value{}, false, fmt.Errorf("error unquoting string: %w", err)
+			return value{}, false, fmt.Errorf("error unquoting string: %w", err)
 		}
-		return Value{Quoted: true, Value: v.value}, true, nil
+		return value{Quoted: true, Value: v.value}, true, nil
 	}
 
 	v, err = p.accept(kindText)
 	if err != nil {
-		return Value{}, false, err
+		return value{}, false, err
 	}
 	if v == nil {
-		return Value{}, false, nil
+		return value{}, false, nil
 	}
-	return Value{Value: v.value}, true, nil
+	return value{Value: v.value}, true, nil
 }
 
 // unquoteString gives both quote styles the same escapes and permits any
@@ -858,7 +858,7 @@ func unquoteString(text string) (string, error) {
 	return result.String(), nil
 }
 
-func (p *parser) composite() (*Expression, error) {
+func (p *parser) composite() (*expression, error) {
 	lparen, err := p.accept(kindLParen)
 	if err != nil {
 		return nil, err
@@ -876,20 +876,20 @@ func (p *parser) composite() (*Expression, error) {
 	return e, p.expect(kindRParen)
 }
 
-func (p *parser) arg() (*Arg, error) {
+func (p *parser) arg() (*arg, error) {
 	m, ok, err := p.member()
 	if err != nil {
 		return nil, err
 	}
 	if ok {
-		return &Arg{Member: m}, nil
+		return &arg{Member: m}, nil
 	}
 	composite, err := p.composite()
 	if err != nil {
 		return nil, err
 	}
 	if composite != nil {
-		return &Arg{Composite: composite}, nil
+		return &arg{Composite: composite}, nil
 	}
 	return nil, nil
 }

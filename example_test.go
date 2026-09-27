@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/rawsql"
 )
 
 func ExampleSchema_CompileFilter() {
@@ -19,7 +18,7 @@ func ExampleSchema_CompileFilter() {
 		panic(err)
 	}
 
-	sql, args, err := rawsql.WhereExpr(expr)
+	sql, args, err := flop.WhereExprSQL(expr)
 	if err != nil {
 		panic(err)
 	}

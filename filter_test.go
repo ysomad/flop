@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/internal/assert"
 )
 
@@ -75,61 +74,61 @@ func filterSchema(t *testing.T) *Schema {
 // validator have to refuse it.
 type malformedFilter struct {
 	name   string
-	filter *aip160.Filter
+	filter *Filter
 }
 
 func malformedFilters() []malformedFilter {
-	member := aip160.Member{Value: aip160.Value{Value: "display_name"}}
-	valid := aip160.Term{Simple: aip160.Simple{Restriction: &aip160.Restriction{Member: member}}}
-	expression := func(term aip160.Term) *aip160.Expression {
-		return &aip160.Expression{Sequences: []aip160.Sequence{{Factors: []aip160.Factor{{Terms: []aip160.Term{term}}}}}}
+	mem := member{Value: value{Value: "display_name"}}
+	valid := term{Simple: simple{Restriction: &restriction{Member: mem}}}
+	expressionOf := func(t term) *expression {
+		return &expression{Sequences: []sequence{{Factors: []factor{{Terms: []term{t}}}}}}
 	}
-	filter := func(e *aip160.Expression) *aip160.Filter { return &aip160.Filter{Expression: e} }
-	restriction := func(r *aip160.Restriction) *aip160.Filter {
-		return filter(expression(aip160.Term{Simple: aip160.Simple{Restriction: r}}))
+	filterOf := func(e *expression) *Filter { return &Filter{expression: e} }
+	restrictionOf := func(r *restriction) *Filter {
+		return filterOf(expressionOf(term{Simple: simple{Restriction: r}}))
 	}
 	return []malformedFilter{
-		{name: "empty expression", filter: filter(&aip160.Expression{})},
+		{name: "empty expression", filter: filterOf(&expression{})},
 		{
 			name:   "empty sequence beside valid",
-			filter: filter(&aip160.Expression{Sequences: append(expression(valid).Sequences, aip160.Sequence{})}),
+			filter: filterOf(&expression{Sequences: append(expressionOf(valid).Sequences, sequence{})}),
 		},
 		{
 			name:   "empty factor",
-			filter: filter(&aip160.Expression{Sequences: []aip160.Sequence{{Factors: []aip160.Factor{{}}}}}),
+			filter: filterOf(&expression{Sequences: []sequence{{Factors: []factor{{}}}}}),
 		},
-		{name: "empty term", filter: filter(expression(aip160.Term{}))},
+		{name: "empty term", filter: filterOf(expressionOf(term{}))},
 		{
 			name: "both simple alternatives",
-			filter: filter(expression(aip160.Term{Simple: aip160.Simple{
+			filter: filterOf(expressionOf(term{Simple: simple{
 				Restriction: valid.Simple.Restriction,
-				Composite:   expression(valid),
+				Composite:   expressionOf(valid),
 			}})),
 		},
-		{name: "missing argument", filter: restriction(&aip160.Restriction{Member: member, Comparator: "="})},
+		{name: "missing argument", filter: restrictionOf(&restriction{Member: mem, Comparator: "="})},
 		{
 			name:   "argument without comparator",
-			filter: restriction(&aip160.Restriction{Member: member, Arg: &aip160.Arg{Member: member}}),
+			filter: restrictionOf(&restriction{Member: mem, Arg: &arg{Member: mem}}),
 		},
-		{name: "missing member", filter: restriction(&aip160.Restriction{})},
+		{name: "missing member", filter: restrictionOf(&restriction{})},
 		{
 			name:   "missing argument member",
-			filter: restriction(&aip160.Restriction{Member: member, Comparator: "=", Arg: &aip160.Arg{}}),
+			filter: restrictionOf(&restriction{Member: mem, Comparator: "=", Arg: &arg{}}),
 		},
 		{
 			name:   "empty member segment",
-			filter: restriction(&aip160.Restriction{Member: aip160.Member{Value: member.Value, Fields: []aip160.Value{{}}}}),
+			filter: restrictionOf(&restriction{Member: member{Value: mem.Value, Fields: []value{{}}}}),
 		},
 		{
 			name:   "unsupported comparator",
-			filter: restriction(&aip160.Restriction{Member: member, Comparator: "IN", Arg: &aip160.Arg{Member: member}}),
+			filter: restrictionOf(&restriction{Member: mem, Comparator: "IN", Arg: &arg{Member: mem}}),
 		},
 		{
 			name: "composite argument",
-			filter: restriction(&aip160.Restriction{
-				Member:     member,
+			filter: restrictionOf(&restriction{
+				Member:     mem,
 				Comparator: "=",
-				Arg:        &aip160.Arg{Composite: expression(valid)},
+				Arg:        &arg{Composite: expressionOf(valid)},
 			}),
 		},
 	}
@@ -240,7 +239,7 @@ func TestSchema_ValidateFilter(t *testing.T) {
 	assert.NoError(t, err)
 
 	type args struct {
-		filter *aip160.Filter
+		filter *Filter
 	}
 	tests := []struct {
 		name    string
@@ -274,7 +273,7 @@ func TestSchema_CompileFilter(t *testing.T) {
 	t.Parallel()
 	type args struct {
 		text   string
-		filter *aip160.Filter
+		filter *Filter
 	}
 	tests := []struct {
 		name    string

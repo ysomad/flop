@@ -16,8 +16,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/flopsq"
 	"github.com/ysomad/flop/internal/assert"
 )
@@ -348,10 +346,10 @@ func TestOffsetQuery_Postgres(t *testing.T) {
 type integrationTraversal struct {
 	schema   *flop.Schema
 	defaults string
-	page     func(order []aip132.OrderBy, filter *aip160.Filter, token string, size, skip int32) ([]string, string)
+	page     func(order []flop.OrderBy, filter *flop.Filter, token string, size, skip int32) ([]string, string)
 	// tokenAfterLast mints a token from the last row the pager handed out, so a
 	// traversal can be walked past its end.
-	tokenAfterLast func(order []aip132.OrderBy, filter *aip160.Filter) string
+	tokenAfterLast func(order []flop.OrderBy, filter *flop.Filter) string
 }
 
 func integrationItemTraversal(t *testing.T) integrationTraversal {
@@ -361,7 +359,7 @@ func integrationItemTraversal(t *testing.T) integrationTraversal {
 	return integrationTraversal{
 		schema:   integrationSchema,
 		defaults: "created_at desc",
-		page: func(order []aip132.OrderBy, filter *aip160.Filter, token string, size, skip int32) ([]string, string) {
+		page: func(order []flop.OrderBy, filter *flop.Filter, token string, size, skip int32) ([]string, string) {
 			after, err := integrationSchema.DecodeCursor(token, order, filter)
 			assert.NoError(t, err)
 			query, err := flopsq.CursorQuery(
@@ -399,7 +397,7 @@ func integrationItemTraversal(t *testing.T) integrationTraversal {
 			}
 			return keys, page.NextCursor
 		},
-		tokenAfterLast: func(order []aip132.OrderBy, filter *aip160.Filter) string {
+		tokenAfterLast: func(order []flop.OrderBy, filter *flop.Filter) string {
 			token, err := integrationSchema.EncodeCursor(last, order, filter)
 			assert.NoError(t, err)
 			return token
@@ -416,7 +414,7 @@ func integrationPaymentTraversal(t *testing.T) integrationTraversal {
 	return integrationTraversal{
 		schema:   integrationPaymentSchema,
 		defaults: "captured_at desc",
-		page: func(order []aip132.OrderBy, filter *aip160.Filter, token string, size, skip int32) ([]string, string) {
+		page: func(order []flop.OrderBy, filter *flop.Filter, token string, size, skip int32) ([]string, string) {
 			after, err := integrationPaymentSchema.DecodeCursor(token, order, filter)
 			assert.NoError(t, err)
 			query, err := flopsq.CursorQuery(
@@ -492,7 +490,7 @@ func integrationRequest(
 	t *testing.T,
 	schema *flop.Schema,
 	defaultOrder, orderText, filterText string,
-) ([]aip132.OrderBy, *aip160.Filter) {
+) ([]flop.OrderBy, *flop.Filter) {
 	t.Helper()
 	requested, err := schema.ParseOrder(orderText)
 	assert.NoError(t, err)

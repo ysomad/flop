@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/internal/assert"
 )
 
@@ -97,9 +95,9 @@ const cursorV1Fixture = "AaJu5M4QXvhHN3FUwNp2aBox406cDiTBmiVUtc6yQN6vBQd1c2Vycy8
 
 func TestSchema_CompileSeek(t *testing.T) {
 	t.Parallel()
-	createdAtPath := aip132.NewFieldPath("created_at")
-	idPath := aip132.NewFieldPath("id")
-	vPath := aip132.NewFieldPath("v")
+	createdAtPath := NewFieldPath("created_at")
+	idPath := NewFieldPath("id")
+	vPath := NewFieldPath("v")
 	createdAtField, err := cursorSchema.SortableField(createdAtPath)
 	assert.NoError(t, err)
 	idField, err := cursorSchema.SortableField(idPath)
@@ -107,12 +105,12 @@ func TestSchema_CompileSeek(t *testing.T) {
 	vField, err := cursorSeekSchema.SortableField(vPath)
 	assert.NoError(t, err)
 
-	createdAtAsc := aip132.OrderBy{FieldPath: createdAtPath}
-	createdAtDesc := aip132.OrderBy{FieldPath: createdAtPath, Descending: true}
-	idAsc := aip132.OrderBy{FieldPath: idPath}
-	idDesc := aip132.OrderBy{FieldPath: idPath, Descending: true}
-	vAsc := aip132.OrderBy{FieldPath: vPath}
-	duplicateOrder := []aip132.OrderBy{idAsc, idAsc}
+	createdAtAsc := OrderBy{FieldPath: createdAtPath}
+	createdAtDesc := OrderBy{FieldPath: createdAtPath, Descending: true}
+	idAsc := OrderBy{FieldPath: idPath}
+	idDesc := OrderBy{FieldPath: idPath, Descending: true}
+	vAsc := OrderBy{FieldPath: vPath}
+	duplicateOrder := []OrderBy{idAsc, idAsc}
 
 	// A value the caller reaches a seek with, rather than one decoded from a
 	// token, still has to be one a cursor can carry.
@@ -135,7 +133,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 	assert.NoError(t, err)
 
 	type args struct {
-		order []aip132.OrderBy
+		order []OrderBy
 		pos   CursorPosition
 	}
 	tests := []struct {
@@ -148,13 +146,13 @@ func TestSchema_CompileSeek(t *testing.T) {
 	}{
 		{
 			name:    "first page",
-			args:    args{order: []aip132.OrderBy{idAsc}},
+			args:    args{order: []OrderBy{idAsc}},
 			wantErr: assert.NoError,
 		},
 		{
 			name: "single ascending field",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []OrderBy{idAsc},
 				pos:   CursorPosition{{FieldPath: idPath, Value: "users/7"}},
 			},
 			want:    Cmp{Field: idField, Op: OpGt, Value: "users/7"},
@@ -163,7 +161,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 		{
 			name: "single descending field",
 			args: args{
-				order: []aip132.OrderBy{idDesc},
+				order: []OrderBy{idDesc},
 				pos:   CursorPosition{{FieldPath: idPath, Value: "users/7"}},
 			},
 			want:    Cmp{Field: idField, Op: OpLt, Value: "users/7"},
@@ -172,7 +170,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 		{
 			name: "mixed directions",
 			args: args{
-				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				order: []OrderBy{createdAtDesc, idAsc},
 				pos: CursorPosition{
 					{FieldPath: createdAtPath, Value: cursorCreatedAt},
 					{FieldPath: idPath, Value: "users/7"},
@@ -190,13 +188,13 @@ func TestSchema_CompileSeek(t *testing.T) {
 		{name: "no order", args: args{}, wantErr: assert.Error},
 		{
 			name:    "unknown ordering field",
-			args:    args{order: []aip132.OrderBy{{FieldPath: aip132.NewFieldPath("nope")}}},
+			args:    args{order: []OrderBy{{FieldPath: NewFieldPath("nope")}}},
 			wantErr: assert.Error,
 		},
 		{
 			name: "order without a unique field",
 			args: args{
-				order: []aip132.OrderBy{createdAtAsc},
+				order: []OrderBy{createdAtAsc},
 				pos:   CursorPosition{{FieldPath: createdAtPath, Value: cursorCreatedAt}},
 			},
 			wantErr: assert.Error,
@@ -204,7 +202,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 		{
 			name: "position does not cover the order",
 			args: args{
-				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				order: []OrderBy{createdAtDesc, idAsc},
 				pos:   CursorPosition{{FieldPath: createdAtPath, Value: cursorCreatedAt}},
 			},
 			wantErr: assert.Error,
@@ -212,7 +210,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 		{
 			name: "position names another field",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []OrderBy{idAsc},
 				pos:   CursorPosition{{FieldPath: createdAtPath, Value: cursorCreatedAt}},
 			},
 			wantErr: assert.Error,
@@ -220,7 +218,7 @@ func TestSchema_CompileSeek(t *testing.T) {
 		{
 			name: "null ordering value",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []OrderBy{idAsc},
 				pos:   CursorPosition{{FieldPath: idPath, Value: nil}},
 			},
 			wantErr: assert.Error,
@@ -232,89 +230,89 @@ func TestSchema_CompileSeek(t *testing.T) {
 			wantErr:      assert.Error,
 		},
 
-		{name: "false value", schema: cursorSeekSchema, args: args{order: []aip132.OrderBy{vAsc}, pos: vPos(false)}, want: vSeek(false), wantErr: assert.NoError},
+		{name: "false value", schema: cursorSeekSchema, args: args{order: []OrderBy{vAsc}, pos: vPos(false)}, want: vSeek(false), wantErr: assert.NoError},
 		{
 			name:    "zero int value",
 			schema:  cursorSeekSchema,
-			args:    args{order: []aip132.OrderBy{vAsc}, pos: vPos(int64(0))},
+			args:    args{order: []OrderBy{vAsc}, pos: vPos(int64(0))},
 			want:    vSeek(int64(0)),
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "uint value",
 			schema:  cursorSeekSchema,
-			args:    args{order: []aip132.OrderBy{vAsc}, pos: vPos(uint64(math.MaxUint64))},
+			args:    args{order: []OrderBy{vAsc}, pos: vPos(uint64(math.MaxUint64))},
 			want:    vSeek(uint64(math.MaxUint64)),
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "zero float value",
 			schema:  cursorSeekSchema,
-			args:    args{order: []aip132.OrderBy{vAsc}, pos: vPos(float64(0))},
+			args:    args{order: []OrderBy{vAsc}, pos: vPos(float64(0))},
 			want:    vSeek(float64(0)),
 			wantErr: assert.NoError,
 		},
-		{name: "empty string value", schema: cursorSeekSchema, args: args{order: []aip132.OrderBy{vAsc}, pos: vPos("")}, want: vSeek(""), wantErr: assert.NoError},
+		{name: "empty string value", schema: cursorSeekSchema, args: args{order: []OrderBy{vAsc}, pos: vPos("")}, want: vSeek(""), wantErr: assert.NoError},
 		{
 			name:    "empty bytes value",
 			schema:  cursorSeekSchema,
-			args:    args{order: []aip132.OrderBy{vAsc}, pos: vPos([]byte{})},
+			args:    args{order: []OrderBy{vAsc}, pos: vPos([]byte{})},
 			want:    vSeek([]byte{}),
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "time value",
 			schema:  cursorSeekSchema,
-			args:    args{order: []aip132.OrderBy{vAsc}, pos: vPos(cursorCreatedAt)},
+			args:    args{order: []OrderBy{vAsc}, pos: vPos(cursorCreatedAt)},
 			want:    vSeek(cursorCreatedAt),
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "duration value",
 			schema:  cursorSeekSchema,
-			args:    args{order: []aip132.OrderBy{vAsc}, pos: vPos(-time.Second)},
+			args:    args{order: []OrderBy{vAsc}, pos: vPos(-time.Second)},
 			want:    vSeek(-time.Second),
 			wantErr: assert.NoError,
 		},
 		{
 			name:         "unsupported int value",
 			schema:       cursorSeekSchema,
-			args:         args{order: []aip132.OrderBy{vAsc}, pos: vPos(int(1))},
+			args:         args{order: []OrderBy{vAsc}, pos: vPos(int(1))},
 			wantSentinel: ErrInvalidCursor,
 			wantErr:      assert.Error,
 		},
 		{
 			name:         "typed nil pointer value",
 			schema:       cursorSeekSchema,
-			args:         args{order: []aip132.OrderBy{vAsc}, pos: vPos((*string)(nil))},
+			args:         args{order: []OrderBy{vAsc}, pos: vPos((*string)(nil))},
 			wantSentinel: ErrInvalidCursor,
 			wantErr:      assert.Error,
 		},
 		{
 			name:         "not a number value",
 			schema:       cursorSeekSchema,
-			args:         args{order: []aip132.OrderBy{vAsc}, pos: vPos(math.NaN())},
+			args:         args{order: []OrderBy{vAsc}, pos: vPos(math.NaN())},
 			wantSentinel: ErrInvalidCursor,
 			wantErr:      assert.Error,
 		},
 		{
 			name:         "positive infinity value",
 			schema:       cursorSeekSchema,
-			args:         args{order: []aip132.OrderBy{vAsc}, pos: vPos(math.Inf(1))},
+			args:         args{order: []OrderBy{vAsc}, pos: vPos(math.Inf(1))},
 			wantSentinel: ErrInvalidCursor,
 			wantErr:      assert.Error,
 		},
 		{
 			name:         "negative infinity value",
 			schema:       cursorSeekSchema,
-			args:         args{order: []aip132.OrderBy{vAsc}, pos: vPos(math.Inf(-1))},
+			args:         args{order: []OrderBy{vAsc}, pos: vPos(math.Inf(-1))},
 			wantSentinel: ErrInvalidCursor,
 			wantErr:      assert.Error,
 		},
 		{
 			name:         "zero time value",
 			schema:       cursorSeekSchema,
-			args:         args{order: []aip132.OrderBy{vAsc}, pos: vPos(time.Time{})},
+			args:         args{order: []OrderBy{vAsc}, pos: vPos(time.Time{})},
 			wantSentinel: ErrInvalidCursor,
 			wantErr:      assert.Error,
 		},
@@ -376,14 +374,14 @@ func TestSchema_CompileSeek(t *testing.T) {
 
 func TestSchema_DecodeCursor(t *testing.T) {
 	t.Parallel()
-	orderBy, err := aip132.ParseOrderBy("created_at desc, id")
+	orderBy, err := ParseOrderBy("created_at desc, id")
 	assert.NoError(t, err)
-	activeFilter, err := aip160.ParseFilter("active = true")
+	activeFilter, err := ParseFilter("active = true")
 	assert.NoError(t, err)
 	row := cursorRow{ID: "users/1", CreatedAt: cursorCreatedAt}
 	position := CursorPosition{
-		{FieldPath: aip132.NewFieldPath("created_at"), Value: cursorCreatedAt},
-		{FieldPath: aip132.NewFieldPath("id"), Value: "users/1"},
+		{FieldPath: NewFieldPath("created_at"), Value: cursorCreatedAt},
+		{FieldPath: NewFieldPath("id"), Value: "users/1"},
 	}
 	token, err := cursorSchema.EncodeCursor(row, orderBy, activeFilter)
 	assert.NoError(t, err)
@@ -400,17 +398,17 @@ func TestSchema_DecodeCursor(t *testing.T) {
 		Duration: -time.Second,
 	}
 	allValues := CursorPosition{
-		{FieldPath: aip132.NewFieldPath("bool_false"), Value: false},
-		{FieldPath: aip132.NewFieldPath("bool_true"), Value: true},
-		{FieldPath: aip132.NewFieldPath("int_value"), Value: int64(math.MinInt64)},
-		{FieldPath: aip132.NewFieldPath("uint_value"), Value: uint64(math.MaxUint64)},
-		{FieldPath: aip132.NewFieldPath("float_value"), Value: float64(1.5)},
-		{FieldPath: aip132.NewFieldPath("string_value"), Value: "value"},
-		{FieldPath: aip132.NewFieldPath("bytes_value"), Value: []byte("value")},
-		{FieldPath: aip132.NewFieldPath("time_value"), Value: cursorCreatedAt},
-		{FieldPath: aip132.NewFieldPath("duration_value"), Value: -time.Second},
+		{FieldPath: NewFieldPath("bool_false"), Value: false},
+		{FieldPath: NewFieldPath("bool_true"), Value: true},
+		{FieldPath: NewFieldPath("int_value"), Value: int64(math.MinInt64)},
+		{FieldPath: NewFieldPath("uint_value"), Value: uint64(math.MaxUint64)},
+		{FieldPath: NewFieldPath("float_value"), Value: float64(1.5)},
+		{FieldPath: NewFieldPath("string_value"), Value: "value"},
+		{FieldPath: NewFieldPath("bytes_value"), Value: []byte("value")},
+		{FieldPath: NewFieldPath("time_value"), Value: cursorCreatedAt},
+		{FieldPath: NewFieldPath("duration_value"), Value: -time.Second},
 	}
-	allValuesOrder, err := aip132.ParseOrderBy(
+	allValuesOrder, err := ParseOrderBy(
 		"bool_false, bool_true, int_value, uint_value, float_value," +
 			" string_value, bytes_value, time_value, duration_value",
 	)
@@ -419,29 +417,29 @@ func TestSchema_DecodeCursor(t *testing.T) {
 	assert.NoError(t, err)
 	// The empty and zero spellings of the same kinds, which a length-prefixed
 	// value and a zero-valued fixed64 have to survive.
-	zeroValuesOrder, err := aip132.ParseOrderBy("int_value, float_value, string_value, bytes_value")
+	zeroValuesOrder, err := ParseOrderBy("int_value, float_value, string_value, bytes_value")
 	assert.NoError(t, err)
 	zeroValuesToken, err := cursorSchema.EncodeCursor(
 		cursorRow{Bytes: []byte{}}, zeroValuesOrder, activeFilter,
 	)
 	assert.NoError(t, err)
 	zeroValues := CursorPosition{
-		{FieldPath: aip132.NewFieldPath("int_value"), Value: int64(0)},
-		{FieldPath: aip132.NewFieldPath("float_value"), Value: float64(0)},
-		{FieldPath: aip132.NewFieldPath("string_value"), Value: ""},
-		{FieldPath: aip132.NewFieldPath("bytes_value"), Value: []byte{}},
+		{FieldPath: NewFieldPath("int_value"), Value: int64(0)},
+		{FieldPath: NewFieldPath("float_value"), Value: float64(0)},
+		{FieldPath: NewFieldPath("string_value"), Value: ""},
+		{FieldPath: NewFieldPath("bytes_value"), Value: []byte{}},
 	}
-	otherFilter, err := aip160.ParseFilter("active = false")
+	otherFilter, err := ParseFilter("active = false")
 	assert.NoError(t, err)
-	otherOrderBy, err := aip132.ParseOrderBy("id")
+	otherOrderBy, err := ParseOrderBy("id")
 	assert.NoError(t, err)
-	unsortableOrder, err := aip132.ParseOrderBy("active")
+	unsortableOrder, err := ParseOrderBy("active")
 	assert.NoError(t, err)
-	duplicateOrder := append(append([]aip132.OrderBy{}, otherOrderBy...), otherOrderBy...)
+	duplicateOrder := append(append([]OrderBy{}, otherOrderBy...), otherOrderBy...)
 	emptyBinding := newCursorBinding(nil, nil)
 	// A single-field order the hand-written tokens below are issued under, so
 	// that they reach the value they are testing instead of failing the binding.
-	valueOrder, err := aip132.ParseOrderBy("v")
+	valueOrder, err := ParseOrderBy("v")
 	assert.NoError(t, err)
 	valueBinding := newCursorBinding(valueOrder, nil)
 	encode := func(plaintext []byte) string { return base64.RawURLEncoding.EncodeToString(plaintext) }
@@ -453,8 +451,8 @@ func TestSchema_DecodeCursor(t *testing.T) {
 
 	type args struct {
 		token   string
-		orderBy []aip132.OrderBy
-		filter  *aip160.Filter
+		orderBy []OrderBy
+		filter  *Filter
 	}
 	tests := []struct {
 		name string
@@ -493,7 +491,7 @@ func TestSchema_DecodeCursor(t *testing.T) {
 			// release still reads back.
 			name:    "version 1 token",
 			args:    args{token: cursorV1Fixture, orderBy: otherOrderBy},
-			want:    CursorPosition{{FieldPath: aip132.NewFieldPath("id"), Value: "users/7"}},
+			want:    CursorPosition{{FieldPath: NewFieldPath("id"), Value: "users/7"}},
 			wantErr: assert.NoError,
 		},
 		{
@@ -690,26 +688,26 @@ func TestSchema_DecodeCursor(t *testing.T) {
 
 func TestSchema_EncodeCursor(t *testing.T) {
 	t.Parallel()
-	idOrder, err := aip132.ParseOrderBy("id")
+	idOrder, err := ParseOrderBy("id")
 	assert.NoError(t, err)
-	unsortableOrder, err := aip132.ParseOrderBy("active")
+	unsortableOrder, err := ParseOrderBy("active")
 	assert.NoError(t, err)
-	noValueOrder, err := aip132.ParseOrderBy("no_value")
+	noValueOrder, err := ParseOrderBy("no_value")
 	assert.NoError(t, err)
-	nullOrder, err := aip132.ParseOrderBy("null_value")
+	nullOrder, err := ParseOrderBy("null_value")
 	assert.NoError(t, err)
-	badOrder, err := aip132.ParseOrderBy("bad_value")
+	badOrder, err := ParseOrderBy("bad_value")
 	assert.NoError(t, err)
-	floatOrder, err := aip132.ParseOrderBy("float_value")
+	floatOrder, err := ParseOrderBy("float_value")
 	assert.NoError(t, err)
-	timeOrder, err := aip132.ParseOrderBy("time_value")
+	timeOrder, err := ParseOrderBy("time_value")
 	assert.NoError(t, err)
-	duplicateOrder := append(append([]aip132.OrderBy{}, idOrder...), idOrder...)
+	duplicateOrder := append(append([]OrderBy{}, idOrder...), idOrder...)
 	row := cursorRow{ID: "users/1", Time: cursorCreatedAt}
 
 	type args struct {
 		row     any
-		orderBy []aip132.OrderBy
+		orderBy []OrderBy
 	}
 	tests := []struct {
 		name string
@@ -724,7 +722,7 @@ func TestSchema_EncodeCursor(t *testing.T) {
 			name: "row",
 			args: args{row: row, orderBy: idOrder},
 			want: CursorPosition{
-				{FieldPath: aip132.NewFieldPath("id"), Value: "users/1"},
+				{FieldPath: NewFieldPath("id"), Value: "users/1"},
 			},
 			wantErr: assert.NoError,
 		},
@@ -732,7 +730,7 @@ func TestSchema_EncodeCursor(t *testing.T) {
 			name: "time value",
 			args: args{row: row, orderBy: timeOrder},
 			want: CursorPosition{
-				{FieldPath: aip132.NewFieldPath("time_value"), Value: cursorCreatedAt},
+				{FieldPath: NewFieldPath("time_value"), Value: cursorCreatedAt},
 			},
 			wantErr: assert.NoError,
 		},
@@ -742,7 +740,7 @@ func TestSchema_EncodeCursor(t *testing.T) {
 			name: "version 1 token",
 			args: args{row: cursorRow{ID: "users/7"}, orderBy: idOrder},
 			want: CursorPosition{
-				{FieldPath: aip132.NewFieldPath("id"), Value: "users/7"},
+				{FieldPath: NewFieldPath("id"), Value: "users/7"},
 			},
 			wantToken: cursorV1Fixture,
 			wantErr:   assert.NoError,
@@ -850,11 +848,11 @@ func TestSchema_EncodeCursor(t *testing.T) {
 
 func TestSchema_NewCursorPage(t *testing.T) {
 	t.Parallel()
-	idOrder, err := aip132.ParseOrderBy("id")
+	idOrder, err := ParseOrderBy("id")
 	assert.NoError(t, err)
-	noValueOrder, err := aip132.ParseOrderBy("no_value")
+	noValueOrder, err := ParseOrderBy("no_value")
 	assert.NoError(t, err)
-	duplicateOrder := append(append([]aip132.OrderBy{}, idOrder...), idOrder...)
+	duplicateOrder := append(append([]OrderBy{}, idOrder...), idOrder...)
 	compositeOrder, err := cursorCompositeSchema.ParseOrder("id, created_at desc")
 	assert.NoError(t, err)
 	rows := []cursorRow{{ID: "1"}, {ID: "2"}, {ID: "3"}}
@@ -867,7 +865,7 @@ func TestSchema_NewCursorPage(t *testing.T) {
 	type args struct {
 		rows     []cursorRow
 		pageSize int32
-		orderBy  []aip132.OrderBy
+		orderBy  []OrderBy
 	}
 	type page struct {
 		items     []cursorRow
@@ -989,7 +987,7 @@ func TestSchema_NewCursorPage(t *testing.T) {
 }
 
 func FuzzDecodeCursor(f *testing.F) {
-	order := []aip132.OrderBy{{FieldPath: aip132.NewFieldPath("id")}}
+	order := []OrderBy{{FieldPath: NewFieldPath("id")}}
 	f.Add("")
 	f.Add("*")
 	f.Add(cursorV1Fixture)

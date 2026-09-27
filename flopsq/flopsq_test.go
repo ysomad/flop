@@ -8,8 +8,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 
 	"github.com/ysomad/flop"
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
 	"github.com/ysomad/flop/flopsq"
 	"github.com/ysomad/flop/internal/assert"
 )
@@ -169,10 +167,10 @@ func TestWhere(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			var filter *aip160.Filter
+			var filter *flop.Filter
 			var err error
 			if test.args.unvalidated {
-				filter, err = aip160.ParseFilter(test.args.filter)
+				filter, err = flop.ParseFilter(test.args.filter)
 			} else {
 				filter, err = schema.ParseFilter(test.args.filter)
 			}
@@ -199,14 +197,14 @@ func TestWhere(t *testing.T) {
 
 func TestOrderBy(t *testing.T) {
 	t.Parallel()
-	createdAtAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	idAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	nopeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("nope")}
-	activeAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("active")}
+	createdAtAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at")}
+	createdAtDesc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at"), Descending: true}
+	idAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("id")}
+	nopeAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("nope")}
+	activeAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("active")}
 
 	type args struct {
-		order []aip132.OrderBy
+		order []flop.OrderBy
 	}
 	tests := []struct {
 		name         string
@@ -218,31 +216,31 @@ func TestOrderBy(t *testing.T) {
 		{name: "empty", args: args{}, wantErr: assert.NoError},
 		{
 			name:    "ascending",
-			args:    args{order: []aip132.OrderBy{createdAtAsc}},
+			args:    args{order: []flop.OrderBy{createdAtAsc}},
 			want:    []string{"u.created_at"},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "descending",
-			args:    args{order: []aip132.OrderBy{createdAtDesc}},
+			args:    args{order: []flop.OrderBy{createdAtDesc}},
 			want:    []string{"u.created_at DESC"},
 			wantErr: assert.NoError,
 		},
 		{
 			name:    "several fields keep their order",
-			args:    args{order: []aip132.OrderBy{createdAtDesc, idAsc}},
+			args:    args{order: []flop.OrderBy{createdAtDesc, idAsc}},
 			want:    []string{"u.created_at DESC", "u.id"},
 			wantErr: assert.NoError,
 		},
-		{name: "undeclared field", args: args{order: []aip132.OrderBy{nopeAsc}}, wantErr: assert.Error},
+		{name: "undeclared field", args: args{order: []flop.OrderBy{nopeAsc}}, wantErr: assert.Error},
 		{
 			name:    "declared but not sortable",
-			args:    args{order: []aip132.OrderBy{activeAsc}},
+			args:    args{order: []flop.OrderBy{activeAsc}},
 			wantErr: assert.Error,
 		},
 		{
 			name:         "repeated field",
-			args:         args{order: []aip132.OrderBy{idAsc, idAsc}},
+			args:         args{order: []flop.OrderBy{idAsc, idAsc}},
 			wantSentinel: flop.ErrInvalidOrder,
 			wantErr:      assert.Error,
 		},
@@ -266,16 +264,16 @@ func TestOrderBy(t *testing.T) {
 
 func TestSeek(t *testing.T) {
 	t.Parallel()
-	createdAtPath := aip132.NewFieldPath("created_at")
-	idPath := aip132.NewFieldPath("id")
+	createdAtPath := flop.NewFieldPath("created_at")
+	idPath := flop.NewFieldPath("id")
 
-	createdAtAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at")}
-	createdAtDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("created_at"), Descending: true}
-	idAsc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id")}
-	idDesc := aip132.OrderBy{FieldPath: aip132.NewFieldPath("id"), Descending: true}
+	createdAtAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at")}
+	createdAtDesc := flop.OrderBy{FieldPath: flop.NewFieldPath("created_at"), Descending: true}
+	idAsc := flop.OrderBy{FieldPath: flop.NewFieldPath("id")}
+	idDesc := flop.OrderBy{FieldPath: flop.NewFieldPath("id"), Descending: true}
 
 	type args struct {
-		order []aip132.OrderBy
+		order []flop.OrderBy
 		pos   flop.CursorPosition
 	}
 	tests := []struct {
@@ -288,7 +286,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "single unique field",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []flop.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			want:     "u.id > ?",
@@ -298,7 +296,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "descending flips the comparison",
 			args: args{
-				order: []aip132.OrderBy{idDesc},
+				order: []flop.OrderBy{idDesc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			want:     "u.id < ?",
@@ -310,7 +308,7 @@ func TestSeek(t *testing.T) {
 			// than as a row value.
 			name: "mixed directions",
 			args: args{
-				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				order: []flop.OrderBy{createdAtDesc, idAsc},
 				pos: flop.CursorPosition{
 					{FieldPath: createdAtPath, Value: createdAt},
 					{FieldPath: idPath, Value: int64(7)},
@@ -322,7 +320,7 @@ func TestSeek(t *testing.T) {
 		},
 		{
 			name: "no position is a first page",
-			args: args{order: []aip132.OrderBy{idAsc}},
+			args: args{order: []flop.OrderBy{idAsc}},
 			want: "", wantErr: assert.NoError,
 		},
 
@@ -330,7 +328,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "order without a unique field",
 			args: args{
-				order: []aip132.OrderBy{createdAtAsc},
+				order: []flop.OrderBy{createdAtAsc},
 				pos:   flop.CursorPosition{{FieldPath: createdAtPath, Value: createdAt}},
 			},
 			wantErr: assert.Error,
@@ -338,7 +336,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "position does not cover the order",
 			args: args{
-				order: []aip132.OrderBy{createdAtDesc, idAsc},
+				order: []flop.OrderBy{createdAtDesc, idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: int64(7)}},
 			},
 			wantErr: assert.Error,
@@ -346,7 +344,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "position names a field the order does not",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []flop.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: createdAtPath, Value: createdAt}},
 			},
 			wantErr: assert.Error,
@@ -354,7 +352,7 @@ func TestSeek(t *testing.T) {
 		{
 			name: "null position value",
 			args: args{
-				order: []aip132.OrderBy{idAsc},
+				order: []flop.OrderBy{idAsc},
 				pos:   flop.CursorPosition{{FieldPath: idPath, Value: nil}},
 			},
 			wantErr: assert.Error,
@@ -442,7 +440,7 @@ func TestQuery(t *testing.T) {
 
 	t.Run("invalid filter", func(t *testing.T) {
 		t.Parallel()
-		filter, err := aip160.ParseFilter("nope = 1")
+		filter, err := flop.ParseFilter("nope = 1")
 		assert.NoError(t, err)
 		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, nil, filter)
 		assert.Error(t, err)
@@ -450,7 +448,7 @@ func TestQuery(t *testing.T) {
 
 	t.Run("invalid order", func(t *testing.T) {
 		t.Parallel()
-		order, err := aip132.ParseOrderBy("nope")
+		order, err := flop.ParseOrderBy("nope")
 		assert.NoError(t, err)
 		_, err = flopsq.Query(sq.Select("*").From("users u"), schema, order, nil)
 		assert.Error(t, err)
@@ -458,7 +456,7 @@ func TestQuery(t *testing.T) {
 
 	t.Run("repeated ordering field", func(t *testing.T) {
 		t.Parallel()
-		order, err := aip132.ParseOrderBy("id")
+		order, err := flop.ParseOrderBy("id")
 		assert.NoError(t, err)
 		_, err = flopsq.Query(
 			sq.Select("*").From("users u"), schema, append(order, order...), nil,
@@ -474,14 +472,14 @@ func TestOffsetQuery(t *testing.T) {
 	order, err := schema.ParseOrder("created_at desc")
 	assert.NoError(t, err)
 	order = schema.TotalOrder(order)
-	invalidFilter, err := aip160.ParseFilter("nope = 1")
+	invalidFilter, err := flop.ParseFilter("nope = 1")
 	assert.NoError(t, err)
-	invalidOrder, err := aip132.ParseOrderBy("nope")
+	invalidOrder, err := flop.ParseOrderBy("nope")
 	assert.NoError(t, err)
 
 	type args struct {
-		order    []aip132.OrderBy
-		filter   *aip160.Filter
+		order    []flop.OrderBy
+		filter   *flop.Filter
 		page     int32
 		pageSize int32
 	}
@@ -525,7 +523,7 @@ func TestOffsetQuery(t *testing.T) {
 		},
 		{
 			name:         "repeated ordering field",
-			args:         args{order: append(append([]aip132.OrderBy{}, order...), order...), page: 1, pageSize: 20},
+			args:         args{order: append(append([]flop.OrderBy{}, order...), order...), page: 1, pageSize: 20},
 			wantSentinel: flop.ErrInvalidOrder,
 			wantErr:      assert.Error,
 		},
@@ -564,11 +562,11 @@ func TestCursorQuery(t *testing.T) {
 	assert.NoError(t, err)
 	after, err := schema.DecodeCursor(token, order, filter)
 	assert.NoError(t, err)
-	invalidFilter, err := aip160.ParseFilter("nope = 1")
+	invalidFilter, err := flop.ParseFilter("nope = 1")
 	assert.NoError(t, err)
-	invalidOrder, err := aip132.ParseOrderBy("nope")
+	invalidOrder, err := flop.ParseOrderBy("nope")
 	assert.NoError(t, err)
-	nonUniqueOrder, err := aip132.ParseOrderBy("created_at")
+	nonUniqueOrder, err := flop.ParseOrderBy("created_at")
 	assert.NoError(t, err)
 	// A composite key is only complete once the order names every field of it,
 	// so a seek under part of one has nothing to compare.
@@ -589,8 +587,8 @@ func TestCursorQuery(t *testing.T) {
 	assert.NoError(t, err)
 
 	type args struct {
-		order    []aip132.OrderBy
-		filter   *aip160.Filter
+		order    []flop.OrderBy
+		filter   *flop.Filter
 		after    flop.CursorPosition
 		pageSize int32
 		skip     int32
@@ -656,7 +654,7 @@ func TestCursorQuery(t *testing.T) {
 		},
 		{
 			name:         "repeated ordering field",
-			args:         args{order: append(append([]aip132.OrderBy{}, order...), order...), pageSize: 2},
+			args:         args{order: append(append([]flop.OrderBy{}, order...), order...), pageSize: 2},
 			wantSentinel: flop.ErrInvalidOrder,
 			wantErr:      assert.Error,
 		},

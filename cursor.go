@@ -8,9 +8,6 @@ import (
 	"math"
 	"slices"
 	"time"
-
-	"github.com/ysomad/flop/aip132"
-	"github.com/ysomad/flop/aip160"
 )
 
 const cursorVersion = 1
@@ -36,7 +33,7 @@ const (
 type CursorValue struct {
 	// FieldPath is the field the value belongs to, matching the order the
 	// cursor was issued under.
-	FieldPath aip132.FieldPath
+	FieldPath FieldPath
 	// Value is the field's value. It must be a bool, int64, uint64, float64,
 	// string, []byte, time.Time or time.Duration.
 	Value any
@@ -48,7 +45,7 @@ type CursorPosition []CursorValue
 
 // seekableFields resolves an order a cursor may page under: every term has to
 // name a sortable field, and every field of the unique key must be present.
-func (s *Schema) seekableFields(order []aip132.OrderBy) ([]*Field, error) {
+func (s *Schema) seekableFields(order []OrderBy) ([]*Field, error) {
 	fields, err := s.SortableFields(order)
 	if err != nil {
 		return nil, err
@@ -76,7 +73,7 @@ func (s *Schema) seekableFields(order []aip132.OrderBy) ([]*Field, error) {
 // ascending and descending fields still seeks correctly. Every ordering column
 // must be NOT NULL: SQL comparisons against NULL are unknown, which would
 // silently drop rows from the page.
-func (s *Schema) CompileSeek(order []aip132.OrderBy, pos CursorPosition) (Expr, error) {
+func (s *Schema) CompileSeek(order []OrderBy, pos CursorPosition) (Expr, error) {
 	fields, err := s.seekableFields(order)
 	if err != nil {
 		return nil, err
@@ -149,8 +146,8 @@ func seekValue(value CursorValue, field *Field) (any, error) {
 // total is [Schema.CompileSeek]'s rule, because that is what needs it.
 func (s *Schema) DecodeCursor(
 	token string,
-	order []aip132.OrderBy,
-	filter *aip160.Filter,
+	order []OrderBy,
+	filter *Filter,
 ) (CursorPosition, error) {
 	if _, err := s.SortableFields(order); err != nil {
 		return nil, err
@@ -169,8 +166,8 @@ func (s *Schema) DecodeCursor(
 // declared for is a declaration mistake, not something a request can cause.
 func (s *Schema) EncodeCursor(
 	row any,
-	order []aip132.OrderBy,
-	filter *aip160.Filter,
+	order []OrderBy,
+	filter *Filter,
 ) (string, error) {
 	fields, err := s.SortableFields(order)
 	if err != nil {
@@ -218,8 +215,8 @@ type CursorPage[T any] struct {
 func (s *Schema) NewCursorPage[T any](
 	rows []T,
 	pageSize int32,
-	order []aip132.OrderBy,
-	filter *aip160.Filter,
+	order []OrderBy,
+	filter *Filter,
 ) (CursorPage[T], error) {
 	if pageSize <= 0 {
 		return CursorPage[T]{}, errorf(ErrInvalidPageSize, "must be positive")
@@ -258,7 +255,7 @@ func trim[T any](rows []T, pageSize int32) ([]T, bool) {
 // the cursor.
 type cursorBinding [sha256.Size]byte
 
-func newCursorBinding(o []aip132.OrderBy, f *aip160.Filter) cursorBinding {
+func newCursorBinding(o []OrderBy, f *Filter) cursorBinding {
 	hash := sha256.New()
 	// The count comes first, so that a short order and a long one cannot line
 	// their terms up against the filter that follows them.
@@ -297,7 +294,7 @@ func writeHashUint64(h hash.Hash, v uint64) {
 // order the cursor was issued under, so decoding reads them back from it.
 func encodeCursor(
 	position CursorPosition,
-	order []aip132.OrderBy,
+	order []OrderBy,
 	binding cursorBinding,
 ) (string, error) {
 	if len(order) == 0 {
@@ -398,7 +395,7 @@ func appendVarbytes(dst []byte, kind valueKind, raw []byte) []byte {
 func decodeCursor(
 	cursor string,
 	binding cursorBinding,
-	order []aip132.OrderBy,
+	order []OrderBy,
 ) (CursorPosition, error) {
 	plaintext, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
